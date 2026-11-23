@@ -939,10 +939,9 @@ function renderToday(){
     <div class="actions today-actions">
       ${worn ? `<span class="done-badge">✓ 已記錄${p.remaining === "empty" ? " · 已用完" : ""}</span>
                <button class="btn primary" data-act="wear" data-id="${esc(p.id)}">補香</button>
-               <button class="btn ghost" data-act="unwear">取消最後一筆</button>`
+               <button class="btn ghost" data-act="open" data-id="${esc(p.id)}">詳情</button>`
              : `<button class="btn primary" data-act="wear" data-id="${esc(p.id)}">今天噴這支</button>${alts.length ? '<button class="btn ghost" data-act="shuffle">換一支</button>' : ""}<button class="btn ghost" data-act="open" data-id="${esc(p.id)}">詳情</button>`}
     </div>
-    ${worn ? `<div class="stock-row" style="margin-top:10px"><button class="btn ghost" data-act="open" data-id="${esc(p.id)}">詳情</button>${stockButton(p,"today")}</div>` : ""}
     ${timeline}
     ${main.why.length ? `<ul class="why">${main.why.map(w => `<li>${esc(w)}</li>`).join("")}</ul>` : ""}
     ${main.tips.length ? `<div class="tips">${main.tips.map(esc).join("・")}</div>` : ""}
@@ -1823,11 +1822,6 @@ document.addEventListener("click", async e => {
       await act(() => Store.addWear({date:TODAY, time:nowTime(), perfumeId:id, occ:S.ctx.occ, temp:S.ctx.temp, wet:!!S.ctx.wet}),
         refill ? `已記錄補香：${p ? p.name : ""}` : `已記錄：今天噴 ${p ? p.name : ""}`);
       if (S.view !== "today") location.hash = "today";
-      break;
-    }
-    case "unwear": {
-      const lastEntry = wearsOn(TODAY).pop();
-      if (lastEntry) await act(() => Store.deleteWear(lastEntry.id), "已取消最後一筆紀錄");
       break;
     }
     case "edit-wear": editDaySheet(v, id); break;
