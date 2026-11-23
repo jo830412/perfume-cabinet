@@ -93,6 +93,8 @@ h2{font-size:13px;font-weight:500;color:var(--muted);letter-spacing:.08em;margin
 .meter span.on{background:var(--ink)}
 .meter span.half{background:linear-gradient(90deg,var(--ink) 50%,var(--surface-2) 50%)}
 .actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+.today-actions{gap:8px}
+.today-actions .btn{padding-inline:10px;white-space:nowrap}
 .btn{border:0;border-radius:12px;padding:12px 16px;min-height:46px;font-weight:500;background:var(--surface-2)}
 .btn.primary{background:var(--accent);color:var(--accent-ink);flex:1}
 .btn.ghost{background:transparent;border:1px solid var(--line)}
@@ -170,6 +172,9 @@ body.sheet-open{position:fixed;left:0;right:0;width:100%;overflow:hidden}
 .form-options{background:var(--bg)}
 .form-section{padding:0 12px 12px}
 .form-actions{margin-top:0;position:sticky;bottom:0;z-index:1;padding:6px 0;background:var(--surface)}
+.duplicate-notice{display:grid;gap:8px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:12px}
+.duplicate-notice .actions{margin:0;gap:8px}
+.duplicate-notice .btn{min-height:44px;padding:8px 10px}
 .version-status{margin:0;padding:10px 12px;border-radius:10px;background:var(--bg);font-size:13px;color:var(--muted)}
 .lookup-link{color:var(--accent);text-underline-offset:3px;font-size:14px;width:fit-content;min-height:44px;display:flex;align-items:center}
 .photo-controls .chip{display:inline-flex;align-items:center;min-height:44px}
@@ -188,6 +193,11 @@ body.sheet-open{position:fixed;left:0;right:0;width:100%;overflow:hidden}
 .pickrow{display:flex;align-items:center;gap:10px;width:100%;border:0;background:var(--bg);border-radius:10px;padding:10px 12px;text-align:left;min-height:46px}
 .pickrow i{width:10px;height:10px;border-radius:50%;background:var(--c);flex:none}
 .pickrow[aria-pressed="true"]{background:var(--accent-soft);font-weight:500}
+.wear-summary{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px;border-radius:12px;background:var(--bg);overflow-wrap:anywhere}
+.day-options,.day-footer{display:grid;gap:6px}
+.day-footer .actions{margin-top:0}
+.day-footer button:disabled{opacity:.55;cursor:default}
+.wear-option-name{flex:1;min-width:0;overflow-wrap:anywhere}
 textarea.io{min-height:140px;font-family:var(--font-data);font-size:12px}
 .accbars{display:grid;gap:5px;margin-top:8px}
 .ab{display:grid;grid-template-columns:4.6em minmax(0,1fr);gap:10px;align-items:center;font-size:13px}
@@ -286,6 +296,7 @@ const HEAVY = ["amber","oud","leather","smoky","sweet","vanilla","balsamic","ani
 const AVG_HIGH = [19,20,22,26,29,32,34,33,31,28,25,21]; // 台北各月平均高溫
 const WEEK = "日一二三四五六";
 const VIEWS = ["today","shelf","log","prefs"];
+const STOCK_FILTERS = {active:"現有",empty:"已用完",all:"全部"};
 const LKEY = "perfume-cabinet-v1";
 
 const $ = s => document.querySelector(s);
@@ -302,7 +313,7 @@ function jitter(str){ let h = 2166136261; for (const c of str) { h ^= c.charCode
 const TODAY = ymd(new Date());
 const S = {
   mode:"loading", perfumes:[], wears:{},
-  view:"today", q:"", fam:null, offset:0,
+  view:"today", q:"", fam:null, stock:"active", offset:0,
   calMonth: TODAY.slice(0,7), ctx:null
 };
 
@@ -818,11 +829,11 @@ function renderToday(){
       </div>
       ${photo(p, "ph-lg", "eager")}
     </div>
-    <div class="actions">
+    <div class="actions today-actions">
       ${worn ? `<span class="done-badge">✓ 已記錄${p.remaining === "empty" ? " · 已用完" : ""}</span><button class="btn ghost" data-act="unwear" style="margin-left:auto">取消紀錄</button>`
-             : `<button class="btn primary" data-act="wear" data-id="${esc(p.id)}">今天噴這支</button><button class="btn ghost" data-act="open" data-id="${esc(p.id)}">詳情</button>`}
+             : `<button class="btn primary" data-act="wear" data-id="${esc(p.id)}">今天噴這支</button>${alts.length ? '<button class="btn ghost" data-act="shuffle">換一支</button>' : ""}<button class="btn ghost" data-act="open" data-id="${esc(p.id)}">詳情</button>`}
     </div>
-    ${worn ? `<div class="stock-row" style="margin-top:10px">${stockButton(p,"today")}</div>` : ""}
+    ${worn ? `<div class="stock-row" style="margin-top:10px"><button class="btn ghost" data-act="open" data-id="${esc(p.id)}">詳情</button>${stockButton(p,"today")}</div>` : ""}
     ${main.why.length ? `<ul class="why">${main.why.map(w => `<li>${esc(w)}</li>`).join("")}</ul>` : ""}
     ${main.tips.length ? `<div class="tips">${main.tips.map(esc).join("・")}</div>` : ""}
     <div class="facts">
@@ -831,7 +842,7 @@ function renderToday(){
       <div><span class="label">上次噴</span><b>${esc(sinceText(last[p.id]))}</b></div>
     </div>
   </article>`;
-  if (alts.length) html += `<div class="toolbar" style="justify-content:space-between"><h2>${worn ? "想換的話" : "其他選擇"}</h2>${worn ? "" : '<button class="btn ghost" data-act="shuffle">換一支</button>'}</div>
+  if (alts.length) html += `<h2>${worn ? "想換的話" : "其他選擇"}</h2>
   <div class="alts">${alts.map(r => `<button class="alt" data-act="open" data-id="${esc(r.p.id)}" style="--c:${famColor(r.p)}">
       <span class="bar"></span>${photo(r.p, "ph-sm")}
       <span style="min-width:0"><span class="n">${esc(r.p.name)}</span><br><span class="s">${esc(r.why[0] || r.p.brand || "")}</span></span>
@@ -849,7 +860,9 @@ function renderShelf(){
       <input class="search" id="shelf-q" type="search" placeholder="搜尋品牌、名稱、香調" value="${esc(S.q)}" aria-label="搜尋香水">
       <button class="btn primary" data-act="new">新增香水</button>
     </div>
-    ${famUsed.length ? `<div class="famscroll" role="group" aria-label="依香調篩選"><button class="chip" data-act="fam" data-v="" aria-pressed="${!S.fam}">全部 ${S.perfumes.length}</button>${famUsed.map(f => `<button class="chip" data-act="fam" data-v="${esc(f)}" aria-pressed="${S.fam===f}">${esc(FAM[f]||f)}</button>`).join("")}</div>` : ""}
+    <div class="famscroll" role="group" aria-label="依庫存篩選">${Object.entries(STOCK_FILTERS).map(([value,label]) =>
+      `<button class="chip" data-act="stock-filter" data-v="${value}" aria-pressed="${S.stock===value}">${label}</button>`).join("")}</div>
+    ${famUsed.length ? `<div class="famscroll" role="group" aria-label="依香調篩選"><button class="chip" data-act="fam" data-v="" aria-pressed="${!S.fam}">所有香調</button>${famUsed.map(f => `<button class="chip" data-act="fam" data-v="${esc(f)}" aria-pressed="${S.fam===f}">${esc(FAM[f]||f)}</button>`).join("")}</div>` : ""}
     <div id="shelf-results"></div>`;
   renderShelfResults();
 }
@@ -857,14 +870,17 @@ function renderShelf(){
 function renderShelfResults(){
   const results = $("#shelf-results");
   if (!S.perfumes.length) { results.innerHTML = emptyState(); return; }
-  const q = S.q.trim().toLowerCase();
+  const q = S.q.trim();
   const list = S.perfumes.filter(p => {
     const families = p.families || [];
-    return (!S.fam || families.includes(S.fam)) && (!q ||
-      [p.brand,p.name,p.notes,p.memo,...families.map(accName)].join(" ").toLowerCase().includes(q));
+    const inStock = S.stock === "all" || (p.remaining === "empty") === (S.stock === "empty");
+    return inStock && (!S.fam || families.includes(S.fam)) &&
+      matchesCatalog(q,...catalogSearchFields(p),p.notes,p.memo,...families.map(accName));
   }).sort(comparePerfumes);
   if (!list.length) {
-    results.innerHTML = '<div class="card muted empty-state" role="status">沒有符合的香水</div>';
+    const message = q || S.fam ? "沒有符合的香水" :
+      (S.stock === "empty" ? "目前沒有已用完的香水" : "目前沒有現有香水");
+    results.innerHTML = `<div class="card muted empty-state" role="status">${message}</div>`;
     return;
   }
   const {last} = lastWorn(null), todayId = S.wears[TODAY]?.perfumeId;
@@ -1141,12 +1157,14 @@ function matchesCatalog(query,...values){
   const haystack = searchText(values.join(" "));
   return searchText(query).split(" ").every(word => haystack.includes(word));
 }
+function catalogSearchFields(p){
+  return [p.name,p.brand,p.conc,...(CATALOG_BRAND_ALIASES[brandAlias(p.brand)] || [])];
+}
 function searchLocalCatalog(query){
   const unique = new Map();
   const items = [...(Store.bundle?.perfumes || []), ...(Store.bundle?.variants || []), ...S.perfumes];
   for (const p of items) if (p.brand && p.name && !unique.has(versionKey(p))) unique.set(versionKey(p),p);
-  const perfumes = [...unique.values()].filter(p =>
-    matchesCatalog(query,p.name,p.brand,p.conc,...(CATALOG_BRAND_ALIASES[brandAlias(p.brand)] || [])));
+  const perfumes = [...unique.values()].filter(p => matchesCatalog(query,...catalogSearchFields(p)));
   const brands = [...new Set([...Object.keys(CATALOG_BRAND_ALIASES), ...items.map(p => p.brand).filter(Boolean)])]
     .filter(brand => matchesCatalog(query,brand,...(CATALOG_BRAND_ALIASES[brandAlias(brand)] || [])));
   return {brands,perfumes};
@@ -1154,6 +1172,22 @@ function searchLocalCatalog(query){
 function remoteCatalogQuery(query){
   const alias = Object.entries(CATALOG_BRAND_ALIASES).find(([,names]) => names.some(name => searchText(name) === searchText(query)));
   return alias ? alias[0] : query;
+}
+function matchingBottle(p){
+  if (!p.brand || !p.name) return null;
+  const key = bottle => versionKey(Object.assign({},bottle,{brand:remoteCatalogQuery(bottle.brand)}));
+  const requested = key(p);
+  const matches = S.perfumes.filter(item => key(item) === requested);
+  return matches.find(item => item.remaining !== "empty") || matches[0] || null;
+}
+function duplicateNotice(p){
+  if (!p) return "";
+  const empty = p.remaining === "empty";
+  return `<div>${empty ? "同款已用完" : "已收藏同款"} · <b>${esc(p.name)}</b></div>
+    <div class="actions">
+      <button class="btn ghost" type="button" data-act="open" data-id="${esc(p.id)}">查看已收藏</button>
+      ${empty ? `<button class="btn ghost" type="button" data-act="restock" data-id="${esc(p.id)}">補貨並恢復推薦</button>` : ""}
+    </div>`;
 }
 async function loadCatalogChoice(choice){
   if (choice.local) return choice.local;
@@ -1235,8 +1269,9 @@ function wireCatalogSearch(formIsOpen){
     const selected = ++generation;
     clearTimeout(timer);
     if (!choice.name) {
-      $("#f-brand").value = choice.brand;
-      $("#f-lookup").href = fragranticaSearch(choice.brand,$("#f-name").value);
+      const brand = $("#f-brand");
+      brand.value = choice.brand;
+      brand.dispatchEvent(new Event("input",{bubbles:true}));
       status.textContent = `已填入品牌 ${choice.brand}`;
       status.hidden = false;
       return;
@@ -1269,6 +1304,7 @@ function editSheet(id,draft=null){
   const seaSel = p.seasons ? Object.keys(SEASON).filter(k => num(p.seasons[k],0) >= 70) : [];
   const concentrations = [...new Set(["", "EDT", "EDP", "Parfum", "Extrait", "EDC", p.conc || ""])];
   const notes = splitNotes(p.notes);
+  const duplicate = id ? null : matchingBottle(p);
   openSheet(`<h3>${id ? "編輯香水" : "新增香水"}</h3>
     <form id="pform" data-id="${esc(p.id)}" class="perfume-form">
       ${id ? "" : `<div class="field">
@@ -1282,6 +1318,7 @@ function editSheet(id,draft=null){
       <div class="field"><label for="f-conc">濃度（選填）</label><select id="f-conc">
         ${concentrations.map(c => `<option value="${esc(c)}"${c===(p.conc || "") ? " selected" : ""}>${esc(concentrationLabel(c))}</option>`).join("")}
       </select></div>
+      ${id ? "" : `<div class="duplicate-notice" id="f-duplicate"${duplicate ? "" : " hidden"}>${duplicateNotice(duplicate)}</div>`}
       ${lookupEdition ? '<p class="version-status" id="version-status" role="status" hidden></p>' : ""}
       <details class="disclosure form-options">
         <summary>香調與 Fragrantica</summary>
@@ -1312,7 +1349,7 @@ function editSheet(id,draft=null){
           ${id ? `<button class="btn ghost danger" type="button" data-act="del" data-id="${esc(id)}">刪除香水</button>` : ""}
         </div>
       </details>
-      <div class="actions form-actions"><button class="btn primary" type="submit">${id ? "儲存" : "新增香水"}</button></div>
+      <div class="actions form-actions"><button class="btn primary" data-duplicate="${esc(duplicate?.id)}" type="submit">${id ? "儲存" : duplicate ? "再新增一瓶" : "新增香水"}</button></div>
     </form>`);
   const form = $("#pform");
   const versionStatus = $("#version-status");
@@ -1321,6 +1358,16 @@ function editSheet(id,draft=null){
   let pending = null;
   const formIsOpen = () => form.isConnected && !$("#sheet").hidden;
   wireCatalogSearch(formIsOpen);
+  function updateDuplicate(requested){
+    const notice = $("#f-duplicate");
+    if (!notice) return;
+    const matched = matchingBottle(requested);
+    const submit = form.querySelector('[type="submit"]');
+    notice.innerHTML = duplicateNotice(matched);
+    notice.hidden = !matched;
+    submit.dataset.duplicate = matched?.id || "";
+    submit.textContent = matched ? "再新增一瓶" : "新增香水";
+  }
   const report = message => {
     if (!versionStatus) return;
     versionStatus.textContent = message;
@@ -1355,6 +1402,7 @@ function editSheet(id,draft=null){
     if (e.target.id === "f-brand" || e.target.id === "f-name" || e.target.id === "f-conc") {
       $("#f-lookup").href = fragranticaSearch($("#f-brand").value,$("#f-name").value);
       if (versionKey(identity()) !== pending?.key) report("");
+      updateDuplicate(identity());
     }
   });
   form.addEventListener("change", e => {
@@ -1375,6 +1423,10 @@ function editSheet(id,draft=null){
       const changed = lookupEdition && key !== originalKey;
       const version = changed ? await prepareVersion(requested) : null;
       if (!formIsOpen() || versionKey(identity()) !== key || (changed && !version)) return;
+      if (!id && (matchingBottle(requested)?.id || "") !== submit.dataset.duplicate) {
+        updateDuplicate(requested);
+        return;
+      }
       await submitForm(p,version);
     } finally {
       submit.disabled = false;
@@ -1413,13 +1465,75 @@ async function submitForm(orig,version){
   detailSheet(id);
 }
 
+function wearDateLabel(date){
+  const [,month,day] = date.split("-").map(Number);
+  return `${month} 月 ${day} 日`;
+}
 function daySheet(date){
   const w = S.wears[date];
-  const [, m, d] = date.split("-").map(Number);
-  const list = S.perfumes.slice().sort(comparePerfumes);
-  openSheet(`<h3>${m} 月 ${d} 日噴了什麼</h3>
-    <div style="display:grid;gap:6px">${list.map(p => `<button class="pickrow" data-act="setday" data-v="${date}" data-id="${esc(p.id)}" aria-pressed="${!!w && w.perfumeId===p.id}" style="--c:${famColor(p)}"><i></i><span style="min-width:0;flex:1">${esc(p.name)}</span><span class="small muted">${esc(p.brand)}</span></button>`).join("")}</div>
-    ${w ? `<button class="btn ghost danger wide" data-act="clearday" data-v="${date}">清除這天的紀錄</button>` : ""}`);
+  const p = w && byId(w.perfumeId);
+  const context = w ? [OCC[w.occ], Number.isFinite(w.temp) ? w.temp+"°C" : "", w.wet ? "雨濕" : ""].filter(Boolean) : [];
+  openSheet(`<h3>${wearDateLabel(date)}使用紀錄</h3>
+    ${w ? `<div class="wear-summary">
+      <div><div class="small muted">${p ? esc([p.brand,p.conc].filter(Boolean).join(" · ")) : ""}</div>
+        <b>${esc(p?.name || "已從香水櫃移除的香水")}</b>
+        ${context.length ? `<div class="small muted">${esc(context.join(" · "))}</div>` : ""}
+      </div>
+      ${p ? photo(p,"ph-sm") : ""}
+    </div>` : '<div class="small muted">這天還沒有使用紀錄。</div>'}
+    <div class="actions">
+      ${S.perfumes.length ? `<button class="btn primary" data-act="edit-day" data-v="${esc(date)}">${w ? "更改紀錄" : "補記香水"}</button>` : ""}
+      ${w ? `<button class="btn ghost danger" data-act="clearday" data-v="${esc(date)}">清除紀錄</button>` : ""}
+    </div>`);
+}
+
+function editDaySheet(date){
+  const current = S.wears[date]?.perfumeId;
+  let selected = current || "";
+  openSheet(`<h3>${wearDateLabel(date)}${current ? "更改紀錄" : "補記香水"}</h3>
+    <form id="day-form" class="perfume-form">
+      <div class="field"><label for="day-search">搜尋要記錄的香水</label>
+        <input type="search" id="day-search" placeholder="品牌或香水名稱" autocomplete="off">
+      </div>
+      <div id="day-options" class="day-options" role="group" aria-label="選擇香水"></div>
+      <div class="day-footer form-actions">
+        <div id="day-selection" class="small muted" aria-live="polite"></div>
+        <div class="actions"><button class="btn ghost" type="button" data-act="day" data-v="${esc(date)}">取消</button>
+          <button class="btn primary" type="submit" id="day-save">儲存紀錄</button></div>
+      </div>
+    </form>`);
+  const form = $("#day-form"), input = $("#day-search"), options = $("#day-options"), save = $("#day-save");
+  function updateSelection(){
+    const perfume = byId(selected);
+    $("#day-selection").textContent = perfume ? "已選："+perfume.name : "請選擇一支香水";
+    save.disabled = !perfume || selected === current;
+    options.querySelectorAll("[data-wear-option]").forEach(button =>
+      button.setAttribute("aria-pressed",button.dataset.wearOption === selected));
+  }
+  function renderOptions(){
+    const list = S.perfumes.filter(p => matchesCatalog(input.value,...catalogSearchFields(p))).sort(comparePerfumes);
+    options.innerHTML = list.length ? list.map(p => `<button type="button" class="pickrow" data-wear-option="${esc(p.id)}"
+      aria-pressed="${selected===p.id}" style="--c:${famColor(p)}"><i></i><span class="wear-option-name">${esc(p.name)}</span>
+      <span class="small muted">${esc([p.brand,p.conc].filter(Boolean).join(" · "))}</span></button>`).join("") :
+      '<span class="small muted" role="status">找不到符合的香水。</span>';
+  }
+  input.addEventListener("input",renderOptions);
+  input.addEventListener("keydown", e => { if (e.key === "Enter") e.preventDefault(); });
+  options.addEventListener("click",e => {
+    const button = e.target.closest("[data-wear-option]");
+    if (!button) return;
+    selected = button.dataset.wearOption;
+    updateSelection();
+  });
+  form.addEventListener("submit",async e => {
+    e.preventDefault();
+    if (save.disabled || !byId(selected)) return;
+    save.disabled = true;
+    await act(() => Store.saveWear(date,Object.assign({},S.wears[date],{perfumeId:selected})),"已儲存紀錄");
+    if (form.isConnected && !$("#sheet").hidden) daySheet(date);
+  });
+  renderOptions();
+  updateSelection();
 }
 
 /* ---------- events ---------- */
@@ -1432,7 +1546,12 @@ document.addEventListener("click", async e => {
     case "wet": S.ctx.wet = !S.ctx.wet; S.ctx.src = "manual"; S.ctx.manual = true; saveCtx(); S.offset = 0; render(); break;
     case "occ": S.ctx.occ = v; applyWeather(); saveCtx(); S.offset = 0; render(); break;
     case "autowx": S.ctx.manual = false; S.ctx.src = null; applyWeather(); saveCtx(); S.offset = 0; render(); break;
-    case "shuffle": S.offset += 1; render(); break;
+    case "shuffle":
+      S.offset += 1;
+      renderToday();
+      if ($(".pick").getBoundingClientRect().top < 0) $(".pick").scrollIntoView({block:"start"});
+      if (e.detail === 0) $('[data-act="shuffle"]')?.focus({preventScroll:true});
+      break;
     case "sync": if (Sync.valid()) Sync.run(); else Sync.connect(); break;
     case "gd-stop": Sync.stop(); break;
     case "unphoto": { const p = byId(id); if (p) { const q = Object.assign({}, p); delete q.photo; await Store.savePerfume(q); detailSheet(id); toast("已改回原本圖片"); } break; }
@@ -1456,6 +1575,13 @@ document.addEventListener("click", async e => {
     case "close": closeSheet(); break;
     case "edit": editSheet(id); break;
     case "new": editSheet(null); break;
+    case "restock": {
+      const p = byId(id);
+      if (!p) break;
+      if (p.remaining === "empty") await act(() => Store.savePerfume(remainingUpdate(p,"full")), "已補貨並恢復推薦");
+      detailSheet(id);
+      break;
+    }
     case "rate": { const p = byId(id); if (p) { await act(() => Store.savePerfume(Object.assign({}, p, {rating:Number(v)}))); detailSheet(id); } break; }
     case "remain":
     case "stock-toggle": {
@@ -1477,10 +1603,15 @@ document.addEventListener("click", async e => {
       $("#v-shelf").querySelectorAll('[data-act="fam"]').forEach(chip => chip.setAttribute("aria-pressed", chip === b));
       renderShelfResults();
       break;
+    case "stock-filter":
+      S.stock = v;
+      $("#v-shelf").querySelectorAll('[data-act="stock-filter"]').forEach(chip => chip.setAttribute("aria-pressed", chip === b));
+      renderShelfResults();
+      break;
     case "month": { const [y,m] = S.calMonth.split("-").map(Number); const d = new Date(y, m-1+Number(v), 1); S.calMonth = `${d.getFullYear()}-${pad(d.getMonth()+1)}`; render(); break; }
-    case "day": if (S.perfumes.length) daySheet(v); break;
-    case "setday": closeSheet(); await act(() => Store.saveWear(v, {date:v, perfumeId:id}), "已更新"); break;
-    case "clearday": closeSheet(); await act(() => Store.deleteWear(v), "已清除"); break;
+    case "day": daySheet(v); break;
+    case "edit-day": if (S.perfumes.length) editDaySheet(v); break;
+    case "clearday": await act(() => Store.deleteWear(v), "已清除"); daySheet(v); break;
     case "export": {
       const data = JSON.stringify(Store.data);
       const io = $("#io"); io.value = data;
