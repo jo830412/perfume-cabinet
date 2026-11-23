@@ -75,8 +75,19 @@ h2{font-size:13px;font-weight:500;color:var(--muted);letter-spacing:.08em;margin
 .weather-summary .weather-risk{font-size:12px;color:var(--muted);white-space:nowrap}
 .weather-info{display:grid;gap:10px;padding:10px 12px 12px;border-top:1px solid var(--line)}
 .weather-info .chip{justify-self:start;min-height:44px}
-.occasions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
-.occasions .chip{min-height:44px;padding:5px 3px;font-size:13px}
+/* 場合：一排可以左右滑的小按鈕 */
+.occasions{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin-inline:-16px;padding:2px 16px;scroll-padding-inline:16px}
+.occasions::-webkit-scrollbar{display:none}
+.occasions .chip{flex:none;min-height:38px;padding:6px 14px;font-size:14px;white-space:nowrap}
+.wx-brief{font-size:13px;color:var(--ink);white-space:nowrap}
+.weather-summary .location{color:var(--muted)}
+.wx-foot{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted)}
+.wx-foot span{flex:1;min-width:0}
+.icon-btn{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:transparent;font-size:18px;line-height:1;color:var(--ink)}
+.icon-btn.spinning{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.wx-periods .past{opacity:.5;padding-block:8px}
+.wx-periods .past .small{color:var(--muted)}
 .label{font-size:12px;color:var(--muted);letter-spacing:.06em}
 
 /* pick */
@@ -93,7 +104,9 @@ h2{font-size:13px;font-weight:500;color:var(--muted);letter-spacing:.08em;margin
 .facts div{min-width:0}
 .facts b{display:block;font-family:var(--font-data);font-weight:500;font-size:15px}
 .meter{display:flex;gap:3px;margin-top:4px}
-.meter span{width:12px;height:6px;border-radius:2px;background:var(--surface-2)}
+.meter span{width:14px;height:8px;border-radius:3px;background:var(--surface-2)}
+.metric-val{display:flex;align-items:baseline;gap:3px;margin-top:2px;font-size:12px;color:var(--muted);white-space:nowrap}
+.metric-val b{font-size:16px;font-weight:500;color:var(--ink)}
 .meter span.on{background:var(--ink)}
 .meter span.half{background:linear-gradient(90deg,var(--ink) 50%,var(--surface-2) 50%)}
 .actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
@@ -119,6 +132,12 @@ h2{font-size:13px;font-weight:500;color:var(--muted);letter-spacing:.08em;margin
 .famscroll{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
 .famscroll .chip{white-space:nowrap;flex:none;min-height:44px}
 .shelf-toolbar .btn{flex:none;padding-inline:12px;min-height:44px}
+.fam-toggle[aria-expanded="true"]{border-color:var(--accent);color:var(--accent)}
+/* 分段按鈕：一排放得下，每段下面是數量 */
+.seg{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;padding:3px;border-radius:12px;background:var(--surface-2)}
+.seg button{display:grid;justify-items:center;gap:0;min-height:44px;padding:4px 2px;border:0;border-radius:9px;background:transparent;color:var(--muted);font-size:13px;line-height:1.25}
+.seg button b{font-family:var(--font-data);font-size:11px;font-weight:500}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);font-weight:500;box-shadow:0 1px 2px rgba(0,0,0,.12)}
 .alt:active{background:var(--surface-2)}
 
 /* log */
@@ -156,6 +175,8 @@ body.sheet-open{position:fixed;left:0;right:0;width:100%;overflow:hidden}
 .catalog-choice{display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:44px;width:100%;border:1px solid var(--line);border-radius:10px;background:var(--bg);text-align:left;padding:8px 10px}
 .catalog-choice span{min-width:0;overflow-wrap:anywhere}
 .detail-profile{background:var(--bg)}
+.charts{display:grid;gap:14px;padding:14px 12px;border-radius:12px;background:var(--bg)}
+.charts .facts{padding-top:12px}
 .profile-body{display:grid;gap:14px;padding:0 12px 12px}
 .community-score{display:inline-flex;gap:6px;align-items:baseline;color:var(--muted);font-size:12px}
 .community-score strong{font-size:14px;color:var(--ink);font-variant-numeric:tabular-nums}
@@ -225,7 +246,8 @@ textarea.io{min-height:140px;font-family:var(--font-data);font-size:12px}
 .tabbar a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--muted);text-decoration:none;font-size:11px}
 .tabbar a[aria-current="page"]{color:var(--accent);font-weight:500}
 .tabbar svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--nav-h) + env(safe-area-inset-bottom,0px) + 14px);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:14px;z-index:60;max-width:calc(100% - 32px)}
+/* 提示訊息從上方出現，不會擋到下方按鈕 */
+.toast{position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 12px);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:999px;font-size:14px;z-index:60;max-width:calc(100% - 32px);box-shadow:0 6px 18px rgba(0,0,0,.18)}
 .banner{background:var(--accent-soft);border-radius:12px;padding:10px 14px;font-size:13px}
 .empty-state{text-align:center;padding:28px 16px}
 @media (prefers-reduced-motion:no-preference){.sheet{animation:up .22s ease-out}@keyframes up{from{transform:translateY(24px);opacity:.6}}}
@@ -342,7 +364,7 @@ const HEAVY = ["amber","oud","leather","smoky","sweet","vanilla","balsamic","ani
 const AVG_HIGH = [19,20,22,26,29,32,34,33,31,28,25,21]; // 台北各月平均高溫
 const WEEK = "日一二三四五六";
 const VIEWS = ["today","shelf","log","prefs"];
-const STOCK_FILTERS = {active:"現有",empty:"已用完",all:"全部",wish:"願望清單",tried:"試香紀錄"};
+const STOCK_SEG = {active:"現有",empty:"用完",all:"全部",wish:"想買",tried:"試香"};
 // own：沒有值 = 我有的；"wish" = 想買；"tried" = 試香過（後兩種不進推薦和使用紀錄）
 const OWN_TYPES = {"":"我有的",wish:"想買",tried:"試香過"};
 const isOwned = p => !p.own;
@@ -732,11 +754,13 @@ function recommend(today, ctx){
       const fit = totalWeight ? weights.reduce((sum,[key,weight]) => sum + weight*suitability(sea[key]),0)/totalWeight : NEUTRAL_SUITABILITY;
       const seasonScore = (fit - NEUTRAL_SUITABILITY) * .05;
       s += seasonScore;
-      if (fit >= 80) why.push([seasonScore, `季節適用度與 ${t}°C 的體感相符`]);
+      // 理由寫出今天的體感最接近哪個季節，以及網友票選的分數
+      const [mainSeason] = weights.reduce((best, cur) => cur[1] > best[1] ? cur : best);
+      if (fit >= 80) why.push([seasonScore, `${t}°C 偏${SEASON[mainSeason]}天，網友票選${SEASON[mainSeason]}季適用度 ${Math.round(suitability(sea[mainSeason]))}`]);
       const dn = suitability(sea[night ? "night" : "day"]);
       const timeScore = (dn - NEUTRAL_SUITABILITY) * .02;
       s += timeScore;
-      if (night && dn >= 85) why.push([timeScore, "夜間適用度高"]);
+      if (night && dn >= 85) why.push([timeScore, `網友票選晚上適用度 ${Math.round(dn)}`]);
     } else if (Number.isFinite(p.tMin) && Number.isFinite(p.tMax)) {
       const lo = p.tMin, hi = p.tMax;
       if (t >= lo && t <= hi) { s += 2.5; why.push([2.5, `${t}°C 在它的舒適溫度 ${lo}–${hi}°C 之間`]); }
@@ -751,7 +775,8 @@ function recommend(today, ctx){
       }
       if (st >= 4.5) s -= 1;
     }
-    if (p.occ?.includes(ctx.occ)) { s += 2.5; why.push([2.5, `適合${OCC[ctx.occ]}`]); }
+    // 符合場合照樣加分，但不寫成理由（你已經選了場合，再寫一次是重複的）
+    if (p.occ?.includes(ctx.occ)) s += 2.5;
     else if (p.occ?.length) s -= 1;
     if (ctx.occ === "office" && st >= 4.5) s -= 1.5;
     if (["date","night","formal"].includes(ctx.occ) && num(p.longevity,3) >= 4) {
@@ -763,6 +788,7 @@ function recommend(today, ctx){
     if (st >= 4.5) tips.push("擴散很強，噴 1–2 下就夠");
     else if (ctx.occ === "office" && st >= 4) tips.push("辦公室裡噴 2 下以內");
     s += jitter(today + p.id) * .8;
+    if (!why.length) why.push([0, `綜合今天的天氣和${OCC[ctx.occ] || "場合"}，分數最高`]);
     why.sort((a,b) => b[0]-a[0]);
     return {p, score:s, why: why.slice(0,3).map(x => x[1]), tips};
   }).sort((a,b) => b.score - a.score);
@@ -785,8 +811,8 @@ function altReasons(main, alts){
     if (ds >= 1) options.push("擴散比較強，存在感高");
     if (ds <= -1) options.push("比較低調，適合近距離");
     if (num(p.rating,0) >= 4 && num(p.rating,0) > num(main.p.rating,0)) options.push("你評分比較高的愛用款");
-    options.push(...r.why);
-    const pick = options.find(o => !used.has(o)) || r.why[0] || p.brand || "";
+    options.push(...r.why.filter(w => !w.startsWith("綜合今天")));
+    const pick = options.find(o => !used.has(o)) || "同樣適合今天的天氣";
     used.add(pick);
     return pick;
   });
@@ -849,6 +875,13 @@ function meter(v){
   for (let i = 1; i <= 5; i++) h += `<span class="${v >= i ? "on" : (v >= i - .5 ? "half" : "")}"></span>`;
   return `<div class="meter" aria-label="${v} / 5">${h}</div>`;
 }
+// 標題旁直接寫分數和程度，例如「擴散度 3/5 中等」，下面再放條狀
+const LEVEL = v => v <= 1.5 ? "很弱" : v <= 2.5 ? "偏弱" : v <= 3 ? "中等" : v <= 4 ? "偏強" : "很強";
+function metric(label, v){
+  return `<span class="label">${label}</span>${Number.isFinite(v)
+    ? `<div class="metric-val"><b class="mono">${v}</b><span>/5 · ${LEVEL(v)}</span></div>${meter(v)}`
+    : '<div class="metric-val"><span>未評估</span></div>'}`;
+}
 function sinceText(date){
   if (!date) return "未噴過";
   const d = daysBetween(date, TODAY);
@@ -883,21 +916,24 @@ function renderWeather(){
   const reading = w ? weatherForOcc(w,c.occ) : null;
   const tempLabel = reading?.label || "氣溫";
   const percent = value => Number.isFinite(value) ? value+"%" : "—";
-  const location = w ? w.place : c.src === "apple" ? "Apple 天氣" : "台北氣溫估計";
+  // 收起時就看得到：溫度 · 天氣 · 降雨機率 · 鄉鎮
+  const town = w ? String(w.place).replace(/^.{2,3}[縣市](?=.)/, "") : c.src === "apple" ? "Apple 天氣" : "台北氣溫估計";
+  const brief = w ? [w.desc, Number.isFinite(reading.rain) ? `降雨 ${reading.rain}%` : ""].filter(Boolean).join(" · ") : "";
   return `<details class="disclosure" id="weather-details"${open}>
     <summary class="weather-summary"><output aria-label="${tempLabel}">${c.temp}°C</output>
-      <span class="location">${esc(location)}</span>
-      ${w && c.wet ? '<span class="weather-risk">可能雨濕</span>' : ""}
+      ${brief ? `<span class="wx-brief">${esc(brief)}</span>` : ""}
+      <span class="location">${w && w.gps ? "📍" : ""}${esc(town)}</span>
+      ${w && c.wet ? '<span class="weather-risk">雨濕</span>' : ""}
     </summary>
     <div class="weather-info">
-      ${w ? `<div class="small">推薦採用${tempLabel} · 降雨 ${percent(reading.rain)} · 濕度 ${percent(reading.humidity)}</div>
-        <div class="small muted">今日預報 ${esc(w.desc)} ${num(w.low,"?")}–${num(w.high,"?")}°C</div>
+      ${w ? `<div class="small">推薦採用${tempLabel} · 濕度 ${percent(reading.humidity)} · 今日 ${num(w.low,"?")}–${num(w.high,"?")}°C</div>
         <div class="wx-periods">${(w.periods || []).map(p => p.feels == null
-          ? `<div class="past"><span class="label">${esc(p.label)}</span><b class="mono">—</b><span class="small muted">無資料</span></div>`
+          ? `<div class="past"><span class="label">${esc(p.label)}</span><span class="small">已過</span></div>`
           : `<div><span class="label">${esc(p.label)}</span><b class="mono">${Math.round(p.feels)}°</b><span class="small muted">☂ ${percent(p.rainProb)}</span></div>`).join("")}</div>
-        <div class="small muted">${esc(w.source || "")} · ${esc(w.at || "")} 更新${w.gps ? "" : " · 未取得定位，使用淡水預報"}</div>`
-        : `<div class="small muted">${c.src === "apple" ? `Apple 天氣 · ${esc(c.at || "")} 更新` : "暫用台北本月平均氣溫，直到取得預報。"}</div>`}
-      <button class="chip" data-act="wxrefresh">重新抓天氣</button>
+        <div class="wx-foot"><span>${esc(w.source || "")} · ${esc(w.at || "")} 更新${w.gps ? "" : " · 沒有定位，用淡水"}</span>
+          <button class="icon-btn" data-act="wxrefresh" aria-label="重新抓天氣" title="重新抓天氣">↻</button></div>`
+        : `<div class="wx-foot"><span>${c.src === "apple" ? `Apple 天氣 · ${esc(c.at || "")} 更新` : "暫用台北本月平均氣溫，直到取得預報。"}</span>
+          <button class="icon-btn" data-act="wxrefresh" aria-label="重新抓天氣" title="重新抓天氣">↻</button></div>`}
     </div>
   </details>`;
 }
@@ -948,8 +984,8 @@ function renderToday(){
     ${main.why.length ? `<ul class="why">${main.why.map(w => `<li>${esc(w)}</li>`).join("")}</ul>` : ""}
     ${main.tips.length ? `<div class="tips">${main.tips.map(esc).join("・")}</div>` : ""}
     <div class="facts">
-      <div><span class="label">擴散度</span>${meter(p.strength)}</div>
-      <div><span class="label">持久度</span>${meter(p.longevity)}</div>
+      <div>${metric("擴散度", p.strength)}</div>
+      <div>${metric("持久度", p.longevity)}</div>
       <div><span class="label">${worn ? "前一次噴" : "上次噴"}</span><b>${esc(prevText)}</b></div>
     </div>
   </article>`;
@@ -967,13 +1003,18 @@ const comparePerfumes = (a,b) => (a.brand || "").localeCompare(b.brand || "", "z
 function renderShelf(){
   const famUsed = [...new Set(S.perfumes.flatMap(p => p.families || []))];
   if (!famUsed.includes(S.fam)) S.fam = null;
+  // 一排分段按鈕（含數量）；香調篩選收在「香調」按鈕裡，點了才展開
+  const owned = S.perfumes.filter(isOwned);
+  const counts = {active:owned.filter(p => p.remaining !== "empty").length, empty:owned.filter(p => p.remaining === "empty").length,
+    all:owned.length, wish:S.perfumes.filter(p => p.own === "wish").length, tried:S.perfumes.filter(p => p.own === "tried").length};
   $("#v-shelf").innerHTML = `<div class="toolbar shelf-toolbar">
       <input class="search" id="shelf-q" type="search" placeholder="搜尋品牌、名稱、香調" value="${esc(S.q)}" aria-label="搜尋香水">
-      <button class="btn primary" data-act="new">新增香水</button>
+      ${famUsed.length ? `<button class="btn ghost fam-toggle" data-act="fam-toggle" aria-expanded="${!!(S.famOpen || S.fam)}">${S.fam ? esc(FAM[S.fam] || S.fam) : "香調"}</button>` : ""}
+      <button class="btn primary" data-act="new">新增</button>
     </div>
-    <div class="famscroll" role="group" aria-label="依庫存篩選">${Object.entries(STOCK_FILTERS).map(([value,label]) =>
-      `<button class="chip" data-act="stock-filter" data-v="${value}" aria-pressed="${S.stock===value}">${label}</button>`).join("")}</div>
-    ${famUsed.length ? `<div class="famscroll" role="group" aria-label="依香調篩選"><button class="chip" data-act="fam" data-v="" aria-pressed="${!S.fam}">所有香調</button>${famUsed.map(f => `<button class="chip" data-act="fam" data-v="${esc(f)}" aria-pressed="${S.fam===f}">${esc(FAM[f]||f)}</button>`).join("")}</div>` : ""}
+    <div class="seg" role="group" aria-label="依類型篩選">${Object.entries(STOCK_SEG).map(([value,label]) =>
+      `<button data-act="stock-filter" data-v="${value}" aria-pressed="${S.stock===value}"><span>${label}</span><b>${counts[value]}</b></button>`).join("")}</div>
+    ${famUsed.length && (S.famOpen || S.fam) ? `<div class="famscroll" role="group" aria-label="依香調篩選"><button class="chip" data-act="fam" data-v="" aria-pressed="${!S.fam}">所有香調</button>${famUsed.map(f => `<button class="chip" data-act="fam" data-v="${esc(f)}" aria-pressed="${S.fam===f}">${esc(FAM[f]||f)}</button>`).join("")}</div>` : ""}
     <div id="shelf-results"></div>`;
   renderShelfResults();
 }
@@ -1010,7 +1051,6 @@ function renderShelfResults(){
       <div class="plank" aria-hidden="true"></div>
       <div class="shelf-labels">${row.map(p => `<button class="bottle-label" data-act="open" data-id="${esc(p.id)}" tabindex="-1">
         <span class="n">${esc(p.name)}</span>
-        <span class="s">${esc([p.brand,p.conc].filter(Boolean).join(" · "))}</span>
         <span class="recent">${shelfScore(p)}${esc(status(p))}</span>
       </button>`).join("")}</div>
     </div>`).join("")}</div>`;
@@ -1063,17 +1103,7 @@ function renderLog(){
 
 function renderPrefs(){
   const el = $("#v-prefs");
-  el.innerHTML = `<h2>推薦怎麼算</h2>
-    <div class="card small" style="display:grid;gap:6px">
-      <div>每支香水依下列項目加減分，取最高分當今日推薦：</div>
-      <div>・依體感溫度參考季節適用度，沒資料的款式維持中性</div>
-      <div>・依選香時段判斷雨濕，清爽香調加分、厚重香調扣分</div>
-      <div>・約會、夜晚聚會採用晚上預報，其餘場合採用白天預報</div>
-      <div>・符合今天的場合加分；上班時太濃的扣分</div>
-      <div>・你的評分也會影響推薦，分數每天會有小幅變化</div>
-      <div>・已用完的香水會排除</div>
-    </div>
-    <h2>Google 雲端硬碟同步</h2>
+  el.innerHTML = `<h2>Google 雲端硬碟同步</h2>
     <div class="card" style="display:grid;gap:10px">
       ${!GOOGLE_CLIENT_ID ? `<div class="small muted">Google 登入還沒設定好。設定完成後，這裡會出現登入按鈕。</div>`
       : Sync.on ? `<div class="small">已連結 Google 雲端硬碟，備份檔名「${esc(Sync.FILE)}」。</div>
@@ -1088,7 +1118,19 @@ function renderPrefs(){
       <button class="btn ghost" data-act="export">複製備份資料</button>
       <textarea class="io" id="io" placeholder="貼上備份資料（JSON）後按「匯入」" aria-label="備份資料"></textarea>
       <div class="actions" style="margin:0"><button class="btn ghost" data-act="import" id="import-btn">匯入</button></div>
-    </div>`;
+    </div>
+    <details class="disclosure prefs-about">
+      <summary>推薦怎麼算</summary>
+      <div class="small" style="display:grid;gap:6px;padding:0 12px 14px">
+        <div>每支香水依下列項目加減分，取最高分當今日推薦：</div>
+        <div>・依體感溫度參考季節適用度，沒資料的款式維持中性</div>
+        <div>・依選香時段判斷雨濕，清爽香調加分、厚重香調扣分</div>
+        <div>・約會、夜晚聚會採用晚上預報，其餘場合採用白天預報</div>
+        <div>・符合今天的場合加分；上班時太濃的扣分</div>
+        <div>・你的評分也會影響推薦，分數每天會有小幅變化</div>
+        <div>・已用完、願望清單、試香紀錄的香水不會推薦</div>
+      </div>
+    </details>`;
 }
 
 /* ---------- sheets ---------- */
@@ -1186,17 +1228,23 @@ function detailSheet(id){
     ${!isOwned(p) && p.memo ? `<div class="note-list"><span class="label">心得</span><span>${esc(p.memo)}</span></div>` : ""}
     ${missingDetails(p)}
     ${noteList(p.notes)}
+    ${p.seasons || p.accords?.length ? `<div class="charts">
+      ${p.seasons ? `<div><div class="label">季節與時段適用度</div><div class="seabars">${Object.entries(SEASON).map(([k,l]) =>
+          `<div class="sb"><span class="st"><i style="height:${num(p.seasons[k],0)}%"></i></span><span>${l}</span></div>`).join("")}</div></div>` : ""}
+      ${(p.accords && p.accords.length) ? `<div><div class="label">主要香調</div><div class="accbars">${p.accords.slice(0,6).map(([k,v]) =>
+          `<div class="ab"><span>${esc(accName(k))}</span><span class="at"><i style="width:${num(v,0)}%;background:${accColor(k)}"></i></span></div>`).join("")}</div></div>` : ""}
+      ${isOwned(p) ? `<div class="facts" style="margin-top:0">
+        <div>${metric("擴散度", p.strength)}</div><div>${metric("持久度", p.longevity)}</div>
+        <div><span class="label">上次噴</span><b>${esc(sinceText(last[id]))}</b></div></div>` : ""}
+    </div>` : ""}
     <details class="disclosure detail-profile">
-      <summary>香調圖表與使用資訊</summary>
+      <summary>更多資訊</summary>
       <div class="profile-body">
-        ${(p.accords && p.accords.length) ? `<div><div class="label">主要香調</div><div class="accbars">${p.accords.map(([k,v]) =>
-            `<div class="ab"><span>${esc(accName(k))}</span><span class="at"><i style="width:${num(v,0)}%;background:${accColor(k)}"></i></span></div>`).join("")}</div></div>` : ""}
-        ${p.seasons ? `<div><div class="label">季節與時段適用度</div><div class="seabars">${Object.entries(SEASON).map(([k,l]) =>
-            `<div class="sb"><span class="st"><i style="height:${num(p.seasons[k],0)}%"></i></span><span>${l}</span></div>`).join("")}</div></div>` : ""}
         <dl class="kv">
           ${Number.isFinite(p.tMin) && Number.isFinite(p.tMax) ? `<dt>舒適溫度</dt><dd class="mono">${p.tMin}–${p.tMax}°C</dd>` : ""}
           <dt>場合</dt><dd>${(p.occ||[]).map(o => esc(OCC[o]||o)).join("、") || "—"}</dd>
-          <dt>擴散 / 持久</dt><dd><span class="mono">${num(p.strength,"未評估")} / ${num(p.longevity,"未評估")}</span>${p.votes ? `<span class="small muted">（依網友投票換算，滿分 5）</span>` : ""}</dd>
+          ${isOwned(p) ? "" : `<dt>擴散 / 持久</dt><dd><span class="mono">${num(p.strength,"未評估")} / ${num(p.longevity,"未評估")}</span></dd>`}
+          ${p.votes ? `<dt>分數來源</dt><dd class="small">擴散、持久度依 Fragrantica 網友投票換算，滿分 5</dd>` : ""}
           ${isOwned(p) ? `<dt>使用</dt><dd>噴過 ${count[id]||0} 天 · 上次 ${esc(sinceText(last[id]))}</dd>` : ""}
           ${p.memo ? `<dt>備註</dt><dd>${esc(p.memo)}</dd>` : ""}
           ${fragranticaId(p.source) ? `<dt>資料來源</dt><dd><a href="${esc(p.source)}" target="_blank" rel="noopener">Fragrantica 頁面</a></dd>` : ""}
@@ -1811,9 +1859,9 @@ document.addEventListener("click", async e => {
     case "unphoto": { const p = byId(id); if (p) { const q = Object.assign({}, p); delete q.photo; await Store.savePerfume(q); detailSheet(id); toast("已改回原本圖片"); } break; }
     case "wxrefresh": {
       if (Weather.busy) break;
-      b.disabled = true; b.textContent = "抓取中…";
+      b.disabled = true; b.classList.add("spinning");
       const updated = await Weather.load(true);
-      b.disabled = false; b.textContent = "重新抓天氣";
+      if (b.isConnected) { b.disabled = false; b.classList.remove("spinning"); }
       toast(updated ? `已更新：${todayWeather().place}` : "暫時抓不到天氣");
       break;
     }
@@ -1884,8 +1932,13 @@ document.addEventListener("click", async e => {
       delArm = null; closeSheet(); await act(() => Store.deletePerfume(id), "已刪除"); break;
     case "fam":
       S.fam = v || null;
-      $("#v-shelf").querySelectorAll('[data-act="fam"]').forEach(chip => chip.setAttribute("aria-pressed", chip === b));
-      renderShelfResults();
+      if (!S.fam) S.famOpen = false;
+      renderShelf();
+      break;
+    case "fam-toggle":
+      S.famOpen = !(S.famOpen || S.fam);
+      if (!S.famOpen) S.fam = null;
+      renderShelf();
       break;
     case "stock-filter":
       S.stock = v;
