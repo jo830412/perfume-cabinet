@@ -274,6 +274,8 @@ const OCC = {office:"上班",casual:"休閒",date:"約會",formal:"正式",sport
 const REMAIN = {full:"滿",most:"多",half:"半",low:"少",empty:"空"};
 const SEASON = {spring:"春",summer:"夏",fall:"秋",winter:"冬",day:"白天",night:"晚上"};
 const SEASON_CENTER = {winter:13, spring:21, fall:24, summer:30}; // 各季節代表氣溫 °C
+const NEUTRAL_SUITABILITY = 70;
+const isNightOcc = occ => occ === "date" || occ === "night";
 const FRESH = ["citrus","aquatic","green","fresh","freshspicy","aromatic","herbal","tea","mineral"];
 const HEAVY = ["amber","oud","leather","smoky","sweet","vanilla","balsamic","animalic","warmspicy"];
 const AVG_HIGH = [19,20,22,26,29,32,34,33,31,28,25,21]; // 台北各月平均高溫
@@ -321,14 +323,23 @@ function readWeatherHash(){
   return true;
 }
 
-/* 電腦排程每天寫進 db 的淡水天氣 */
 const todayWeather = () => (S.weather && S.weather.date === TODAY) ? S.weather : null;
+function weatherForOcc(w,occ){
+  const prefix = isNightOcc(occ) ? "night" : "day";
+  const temp = w[prefix+"Feels"];
+  const label = prefix === "night" ? "晚上體感溫度" : "白天體感溫度";
+  // 讓上一版的快取可用到下一次天氣更新。
+  if (!Number.isFinite(w.currentFeels)) return {temp, rain:w.rainProb, humidity:w.humidity, label};
+  return Number.isFinite(temp)
+    ? {temp, rain:w[prefix+"RainProb"], humidity:w[prefix+"Humidity"], label}
+    : {temp:w.currentFeels, rain:w.currentRainProb, humidity:w.currentHumidity, label:"目前體感溫度"};
+}
 function applyWeather(){
   const w = todayWeather();
   if (!w) return;
-  const night = ["date","night"].includes(S.ctx.occ);
-  S.ctx = Object.assign({}, S.ctx, {temp: Math.round(num(night ? w.nightFeels : w.dayFeels, S.ctx.temp)),
-    wet: num(w.rainProb,0) >= 50 || num(w.humidity,0) >= 90, guessed:false, src:"auto"});
+  const {temp,rain,humidity} = weatherForOcc(w,S.ctx.occ);
+  S.ctx = Object.assign({}, S.ctx, {temp: Math.round(num(temp, S.ctx.temp)),
+    wet: num(rain,0) >= 50 || num(humidity,0) >= 90, guessed:false, src:"auto"});
 }
 
 /* ---------- 資料：存在手機（localStorage），可同步到 Google 雲端硬碟 ---------- */
@@ -426,43 +437,66 @@ function nearestTown(towns, pos){
   return best;
 }
 function buildWeather(loc, place){
-  const r1 = x => Math.round(x * 10) / 10;
-  const avg = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : null;
-  const el = name => (loc.WeatherElement.find(e => e.ElementName === name) || {Time:[]}).Time;
-  const val = t => Number(Object.values(t.ElementValue[0])[0]);
-  // 逐時：時間、溫度、體感、濕度
-  const hourly = el("溫度").map((t, i) => ({at:t.DataTime, t:val(t),
-    f:val(el("體感溫度")[i] || t), rh:val(el("相對濕度")[i] || {ElementValue:[{v:NaN}]})}));
-  const rain = el("3小時降雨機率").map(t => ({s:t.StartTime, e:t.EndTime, p:val(t)}));
-  const wx = el("天氣現象").map(t => ({s:t.StartTime, e:t.EndTime, w:t.ElementValue[0].Weather}));
-  const hr = s => Number(s.slice(11,13));
-  const today = hourly.filter(x => x.at.slice(0,10) === TODAY);
-  const inWin = (from, to) => today.filter(x => hr(x.at) >= from && hr(x.at) < to);
-  const rainIn = (from, to) => rain.filter(x => x.s.slice(0,10) === TODAY && hr(x.s) < to && (hr(x.s) + 3) > from);
-  const periods = [["早上",6,11],["中午",11,14],["下午",14,18],["晚上",18,24]].map(([label, from, to]) => {
-    const h = inWin(from, to), r = rainIn(from, to);
-    return {label, feels: h.length ? r1(avg(h.map(x => x.f))) : null, rainProb: r.length ? Math.max(...r.map(x => x.p)) : null};
+  const el = name => loc.WeatherElement.find(e => e.ElementName === name)?.Time || [];
+  const read = (point, min, max) => {
+    const raw = Object.values(point?.ElementValue?.[0] || {})[0];
+    if (raw == null || String(raw).trim() === "") return null;
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= min && value <= max ? value : null;
+  };
+  const avg = values => {
+    const valid = values.filter(Number.isFinite);
+    return valid.length ? valid.reduce((a,b) => a + b,0) / valid.length : null;
+  };
+  const feelsByTime = new Map(el("體感溫度").map(x => [x.DataTime,read(x,-60,65)]));
+  const humidityByTime = new Map(el("相對濕度").map(x => [x.DataTime,read(x,0,100)]));
+  const rows = el("溫度").filter(x => x.DataTime?.startsWith(TODAY+"T")).flatMap(x => {
+    const at = Date.parse(x.DataTime), temp = read(x,-60,65);
+    return Number.isFinite(at) && temp !== null
+      ? [{at, temp, feels:feelsByTime.get(x.DataTime) ?? temp, humidity:humidityByTime.get(x.DataTime)}]
+      : [];
   });
-  const next = n => hourly.slice(0, n);
-  const day = inWin(8, 20).length ? inWin(8, 20) : next(12);
-  const night = inWin(18, 24).length ? inWin(18, 24) : next(6);
-  const rest = today.length ? today : next(12);
-  const restRain = rain.filter(x => x.s.slice(0,10) === TODAY);
-  const d = new Date();
+  if (!rows.length) throw new Error("No temperatures in today's forecast");
+  const rain = el("3小時降雨機率").map(x => ({
+    start:Date.parse(x.StartTime), end:Date.parse(x.EndTime), value:read(x,0,100)
+  })).filter(x => Number.isFinite(x.value));
+  const midnight = Date.parse(TODAY+"T00:00:00+08:00");
+  const hour = 3600000;
+  function rainBetween(start,end){
+    const values = rain.filter(r => r.start < end && r.end > start).map(r => r.value);
+    return values.length ? Math.max(...values) : null;
+  }
+  function period(from,to){
+    const start = midnight + from*hour, end = midnight + to*hour;
+    const samples = rows.filter(x => x.at >= start && x.at < end);
+    const feels = avg(samples.map(x => x.feels));
+    const humidity = avg(samples.map(x => x.humidity));
+    return {feels:feels === null ? null : Math.round(feels*10)/10,
+      humidity:humidity === null ? null : Math.round(humidity), rainProb:rainBetween(start,end)};
+  }
+  const now = new Date();
+  const current = rows.reduce((best,row) => Math.abs(row.at-now) < Math.abs(best.at-now) ? row : best);
+  const weatherDescription = el("天氣現象").find(x => Date.parse(x.StartTime) <= current.at &&
+    current.at < Date.parse(x.EndTime))?.ElementValue?.[0]?.Weather;
+  const allDay = period(0,24);
+  const periods = [["早上",6,11],["中午",11,14],["下午",14,18],["晚上",18,24]].map(([label,from,to]) =>
+    Object.assign({label},period(from,to)));
+  const day = period(6,18), night = period(18,24);
   return {place:`${place.county}${place.town}`, gps:place.gps, source:"中央氣象署", date:TODAY,
-    at:`${pad(d.getHours())}:${pad(d.getMinutes())}`, fetchedAt:Date.now(),
-    dayFeels:r1(avg(day.map(x => x.f))), nightFeels:r1(avg(night.map(x => x.f))),
-    high:Math.max(...rest.map(x => x.t)), low:Math.min(...rest.map(x => x.t)),
-    rainProb:(restRain.length ? restRain : rain.slice(0,4)).reduce((m, x) => Math.max(m, x.p), 0),
-    humidity:Math.round(avg(rest.map(x => x.rh).filter(x => !isNaN(x))) ?? 0),
-    desc:(wx[0] && wx[0].w) || "", periods};
+    at:`${pad(now.getHours())}:${pad(now.getMinutes())}`, fetchedAt:now.getTime(),
+    dayFeels:day.feels, dayRainProb:day.rainProb, dayHumidity:day.humidity,
+    nightFeels:night.feels, nightRainProb:night.rainProb, nightHumidity:night.humidity,
+    currentFeels:current.feels, currentRainProb:rainBetween(current.at,current.at+1), currentHumidity:current.humidity,
+    high:Math.max(...rows.map(x => x.temp)), low:Math.min(...rows.map(x => x.temp)),
+    rainProb:allDay.rainProb, humidity:allDay.humidity, desc:weatherDescription || "", periods};
 }
 const Weather = {
   busy: false,
   async load(force){
     const c = S.weather;
     if (this.busy) return;
-    if (!force && c && c.date === TODAY && c.source === "中央氣象署" && Date.now() - num(c.fetchedAt,0) < 30*60e3) return;
+    if (!force && c && c.date === TODAY && c.source === "中央氣象署" && Number.isFinite(c.currentFeels) &&
+      Date.now() - num(c.fetchedAt,0) < 30*60e3) return;
     this.busy = true;
     try {
       const [towns, pos] = await Promise.all([loadTowns(), getPosition()]);
@@ -589,50 +623,56 @@ function lastWorn(before){
 }
 function profile(p){
   // 清爽／厚重程度：用主要香調的比例加權（0–1）
-  const acc = (p.accords && p.accords.length) ? p.accords.slice(0,6) : (p.families || []).map(f => [f, 100]);
-  const tot = acc.reduce((a,[,v]) => a + v, 0) || 1;
+  const measured = Array.isArray(p.accords) ? p.accords.filter(a => Array.isArray(a) && num(a[1],0) > 0).slice(0,6) : [];
+  const families = Array.isArray(p.families) ? p.families : [];
+  const acc = measured.length ? measured : families.map(f => [f, 100]);
+  if (!acc.length) return null;
+  const tot = acc.reduce((a,[,v]) => a + v, 0);
   const part = list => acc.reduce((a,[k,v]) => a + (list.includes(k) ? v : 0), 0) / tot;
   return {fresh: part(FRESH), heavy: part(HEAVY)};
 }
-function seasonLabel(t){
-  if (t >= 27) return "summer";
-  if (t <= 16) return "winter";
-  const mo = new Date().getMonth();
-  return (mo >= 1 && mo <= 6) ? "spring" : "fall";
-}
 function recommend(today, ctx){
+  const t = ctx.temp, night = isNightOcc(ctx.occ);
+  const weights = Object.entries(SEASON_CENTER).map(([key,center]) => [key, Math.exp(-(((t-center)/5) ** 2))]);
+  const totalWeight = weights.reduce((sum,[,weight]) => sum + weight,0);
   return S.perfumes.filter(p => p.remaining !== "empty").map(p => {
     let s = 0; const why = [], tips = [];
-    const t = ctx.temp, st = num(p.strength, 3);
-    const {fresh, heavy} = profile(p);
+    const st = num(p.strength, 3);
     const sea = p.seasons;
     if (sea) {
-      // 依氣溫把今天分配到四季，再用網友的季節投票加權
-      let wsum = 0, fit = 0;
-      for (const [k, c] of Object.entries(SEASON_CENTER)) { const w = Math.exp(-(((t - c) / 5) ** 2)); wsum += w; fit += w * num(sea[k], 50) / 100; }
-      fit /= wsum;
-      s += fit * 5 - 1.5;
-      const lab = seasonLabel(t), v = num(sea[lab], 0);
-      if (v >= 80) why.push([2.4, `${t}°C 算${SEASON[lab]}天，網友票選它的${SEASON[lab]}季適用度 ${v}`]);
-      const night = ["date","night"].includes(ctx.occ), dn = num(sea[night ? "night" : "day"], 70);
-      s += (dn - 60) / 40 * .8;
-      if (night && dn >= 85) why.push([1.4, "網友票選很適合晚上"]);
+      // 以相同的中性值計算有票數和缺少票數的款式。
+      const suitability = value => Math.max(0,Math.min(100,num(value,NEUTRAL_SUITABILITY)));
+      const fit = totalWeight ? weights.reduce((sum,[key,weight]) => sum + weight*suitability(sea[key]),0)/totalWeight : NEUTRAL_SUITABILITY;
+      const seasonScore = (fit - NEUTRAL_SUITABILITY) * .05;
+      s += seasonScore;
+      if (fit >= 80) why.push([seasonScore, `季節適用度與 ${t}°C 的體感相符`]);
+      const dn = suitability(sea[night ? "night" : "day"]);
+      const timeScore = (dn - NEUTRAL_SUITABILITY) * .02;
+      s += timeScore;
+      if (night && dn >= 85) why.push([timeScore, "夜間適用度高"]);
     } else if (Number.isFinite(p.tMin) && Number.isFinite(p.tMax)) {
       const lo = p.tMin, hi = p.tMax;
-      if (t >= lo && t <= hi) { s += 2.5; why.push([2.4, `${t}°C 在它的舒適溫度 ${lo}–${hi}°C 之間`]); }
+      if (t >= lo && t <= hi) { s += 2.5; why.push([2.5, `${t}°C 在它的舒適溫度 ${lo}–${hi}°C 之間`]); }
       else s -= (t < lo ? lo - t : t - hi) * 0.45;
     }
     if (ctx.wet) {
-      s += (fresh - .4) * 2.5 - heavy * 1.5;
-      if (fresh >= .5 && heavy < .2) why.push([1.6, "下雨或潮濕的日子，清爽型比較不悶"]);
+      const scent = profile(p);
+      if (scent) {
+        const wetScore = (scent.fresh - .4) * 2.5 - scent.heavy * 1.5;
+        s += wetScore;
+        if (wetScore > 0 && scent.fresh >= .5) why.push([wetScore, "清爽香調適合潮濕天氣"]);
+      }
       if (st >= 4.5) s -= 1;
     }
-    if (p.occ?.includes(ctx.occ)) { s += 2.5; why.push([2, `適合${OCC[ctx.occ]}`]); }
+    if (p.occ?.includes(ctx.occ)) { s += 2.5; why.push([2.5, `適合${OCC[ctx.occ]}`]); }
     else if (p.occ?.length) s -= 1;
     if (ctx.occ === "office" && st >= 4.5) s -= 1.5;
-    if (["date","night","formal"].includes(ctx.occ) && num(p.longevity,3) >= 4) { s += .6; why.push([1, "留香久，撐得過整晚"]); }
-    const r = num(p.rating, 3); s += (r-3) * .7;
-    if (r >= 5) why.push([1.2, "你給它滿分"]); else if (r >= 4) why.push([.9, "你的高分愛用款"]);
+    if (["date","night","formal"].includes(ctx.occ) && num(p.longevity,3) >= 4) {
+      s += .6; why.push([.6, "留香較久，適合時間較長的場合"]);
+    }
+    const r = Math.max(1,Math.min(5,num(p.rating,3))), ratingScore = (r-3) * .7;
+    s += ratingScore;
+    if (r >= 5) why.push([ratingScore, "你給它滿分"]); else if (r >= 4) why.push([ratingScore, "你的高分愛用款"]);
     if (st >= 4.5) tips.push("擴散很強，噴 1–2 下就夠");
     else if (ctx.occ === "office" && st >= 4) tips.push("辦公室裡噴 2 下以內");
     s += jitter(today + p.id) * .8;
@@ -715,7 +755,9 @@ function emptyState(){
 function renderWeather(){
   const w = todayWeather(), c = S.ctx;
   const open = $("#weather-details")?.open ? " open" : "";
-  const tempLabel = w ? (["date","night"].includes(c.occ) ? "晚上體感溫度" : "白天體感溫度") : "氣溫";
+  const reading = w ? weatherForOcc(w,c.occ) : null;
+  const tempLabel = reading?.label || "氣溫";
+  const percent = value => Number.isFinite(value) ? value+"%" : "—";
   const location = w ? w.place : c.src === "apple" ? "Apple 天氣" : "台北氣溫估計";
   return `<details class="disclosure" id="weather-details"${open}>
     <summary class="weather-summary"><output aria-label="${tempLabel}">${c.temp}°C</output>
@@ -723,10 +765,11 @@ function renderWeather(){
       ${w && c.wet ? '<span class="weather-risk">可能雨濕</span>' : ""}
     </summary>
     <div class="weather-info">
-      ${w ? `<div class="small">${esc(w.desc)} ${num(w.low,"?")}–${num(w.high,"?")}°C · 降雨 ${num(w.rainProb,0)}% · 濕度 ${num(w.humidity,0)}%</div>
+      ${w ? `<div class="small">推薦採用${tempLabel} · 降雨 ${percent(reading.rain)} · 濕度 ${percent(reading.humidity)}</div>
+        <div class="small muted">今日預報 ${esc(w.desc)} ${num(w.low,"?")}–${num(w.high,"?")}°C</div>
         <div class="wx-periods">${(w.periods || []).map(p => p.feels == null
-          ? `<div class="past"><span class="label">${esc(p.label)}</span><b class="mono">—</b><span class="small muted">已過</span></div>`
-          : `<div><span class="label">${esc(p.label)}</span><b class="mono">${Math.round(p.feels)}°</b><span class="small muted">☂ ${num(p.rainProb,0)}%</span></div>`).join("")}</div>
+          ? `<div class="past"><span class="label">${esc(p.label)}</span><b class="mono">—</b><span class="small muted">無資料</span></div>`
+          : `<div><span class="label">${esc(p.label)}</span><b class="mono">${Math.round(p.feels)}°</b><span class="small muted">☂ ${percent(p.rainProb)}</span></div>`).join("")}</div>
         <div class="small muted">${esc(w.source || "")} · ${esc(w.at || "")} 更新${w.gps ? "" : " · 未取得定位，使用淡水預報"}</div>`
         : `<div class="small muted">${c.src === "apple" ? `Apple 天氣 · ${esc(c.at || "")} 更新` : "暫用台北本月平均氣溫，直到取得預報。"}</div>`}
       <button class="chip" data-act="wxrefresh">重新抓天氣</button>
@@ -859,9 +902,9 @@ function renderPrefs(){
   el.innerHTML = `<h2>推薦怎麼算</h2>
     <div class="card small" style="display:grid;gap:6px">
       <div>每支香水依下列項目加減分，取最高分當今日推薦：</div>
-      <div>・依今天氣溫判斷偏哪個季節，再看 Fragrantica 網友票選它適不適合這個季節</div>
-      <div>・下雨或潮濕時，香調比例裡清爽的加分、厚重的扣分</div>
-      <div>・約會、夜晚聚會看網友的「晚上」投票，其他場合看「白天」</div>
+      <div>・依體感溫度參考季節適用度，沒資料的款式維持中性</div>
+      <div>・依選香時段判斷雨濕，清爽香調加分、厚重香調扣分</div>
+      <div>・約會、夜晚聚會採用晚上預報，其餘場合採用白天預報</div>
       <div>・符合今天的場合加分；上班時太濃的扣分</div>
       <div>・你的評分也會影響推薦，分數每天會有小幅變化</div>
       <div>・剩量標成「空」的香水會排除</div>
@@ -943,7 +986,7 @@ function detailSheet(id){
       <div class="profile-body">
         ${(p.accords && p.accords.length) ? `<div><div class="label">主要香調</div><div class="accbars">${p.accords.map(([k,v]) =>
             `<div class="ab"><span>${esc(accName(k))}</span><span class="at"><i style="width:${num(v,0)}%;background:${accColor(k)}"></i></span></div>`).join("")}</div></div>` : ""}
-        ${p.seasons ? `<div><div class="label">網友票選適用時機</div><div class="seabars">${Object.entries(SEASON).map(([k,l]) =>
+        ${p.seasons ? `<div><div class="label">季節與時段適用度</div><div class="seabars">${Object.entries(SEASON).map(([k,l]) =>
             `<div class="sb"><span class="st"><i style="height:${num(p.seasons[k],0)}%"></i></span><span>${l}</span></div>`).join("")}</div></div>` : ""}
         <dl class="kv">
           ${Number.isFinite(p.tMin) && Number.isFinite(p.tMax) ? `<dt>舒適溫度</dt><dd class="mono">${p.tMin}–${p.tMax}°C</dd>` : ""}
