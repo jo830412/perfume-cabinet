@@ -234,6 +234,7 @@ html,body{margin:0}
 .top-r{display:flex;align-items:center;gap:8px}
 .sync-chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 10px;font-size:12px;min-height:30px;color:var(--muted)}
 .sync-chip[data-state="need"]{border-color:var(--accent);color:var(--accent);font-weight:500}
+.app-version{margin:-10px 0 10px;font-family:var(--font-data);font-size:11px;color:var(--muted);letter-spacing:.02em}
 
 /* 香水櫃：木頭層架，一排 3～4 罐 */
 .cabinet{background:var(--cabinet-back);border:8px solid var(--cabinet-frame);border-radius:14px;padding:4px 0 6px;
@@ -291,6 +292,7 @@ html,body{margin:0}
     <h1>我的香水櫃</h1>
     <span class="top-r"><button class="sync-chip" id="sync-chip" data-act="sync" hidden></button><span class="date" id="hdr-date"></span></span>
   </header>
+  <div class="app-version" id="app-version"></div>
   <div class="banner" id="status" hidden></div>
 
   <section class="view" id="v-today" aria-label="今日推薦"></section>
@@ -1983,13 +1985,32 @@ function toast(msg){ const t = $("#toast"); t.textContent = msg; t.hidden = fals
 function showStatus(msg){ const s = $("#status"); s.textContent = msg; s.hidden = false; }
 function hideStatus(){ $("#status").hidden = true; }
 
+/* ---------- 版本：GitHub Actions 發布時把 __APP_VERSION__ 換成「月/日 時:分 · commit」 ---------- */
+const APP_VERSION = "__APP_VERSION__";
+const isDevBuild = APP_VERSION.startsWith("__");
+$("#app-version").textContent = "版本 " + (isDevBuild ? "開發中" : APP_VERSION);
+// 網頁會被手機快取最多 10 分鐘；打開或切回 App 時問一下伺服器，有新版就帶著新版號重新載入
+async function checkUpdate(){
+  if (isDevBuild) return;
+  try {
+    const latest = (await fetch("version.json?t=" + Date.now(), {cache:"no-store"}).then(r => r.json())).version;
+    if (!latest || latest === APP_VERSION) return;
+    if (sessionStorage.getItem("update-tried") === latest) { showStatus(`新版本 ${latest} 還在發布中，過幾分鐘再打開一次。`); return; }
+    if (!$("#sheet").hidden) return; // 面板開著時先不打斷，下次切回 App 再更新
+    sessionStorage.setItem("update-tried", latest);
+    location.replace(location.pathname + "?v=" + encodeURIComponent(latest) + location.hash);
+  } catch {}
+}
+
 S.weather = lsGet("wx"); applyWeather();
+checkUpdate();
 route();
 Store.init().then(() => Weather.load());
 Sync.init();
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") return;
   if (ymd(new Date()) !== TODAY) { location.reload(); return; } // 隔天回到 App 就重新整理
+  checkUpdate();
   Weather.load();
   if (Sync.valid() && Sync.dirty) Sync.run();
 });
