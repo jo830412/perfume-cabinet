@@ -172,6 +172,7 @@ textarea.io{min-height:140px;font-family:var(--font-data);font-size:12px}
 .wx-periods{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
 .wx-periods div{background:var(--surface-2);border-radius:10px;padding:8px 4px;display:grid;justify-items:center;gap:2px}
 .wx-periods b{font-weight:500;font-size:18px}
+.wx-periods .past{opacity:.45}
 
 /* nav */
 .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);padding-left:max(8px,env(safe-area-inset-left,0px));padding-right:max(8px,env(safe-area-inset-right,0px))}
@@ -354,37 +355,82 @@ const Store = {
   async savePrefs(p){ this.data.prefs = Object.assign({}, p, {t:Date.now()}); this.save(); }
 };
 
-/* ---------- 天氣：打開 App 時直接抓新北市淡水區今天的逐時預報（Open-Meteo，免金鑰） ---------- */
-const WX = {place:"新北市淡水區", lat:25.1697, lon:121.4428};
-const WMO = {0:"晴",1:"大致晴朗",2:"多雲",3:"陰",45:"霧",48:"霧",51:"毛毛雨",53:"毛毛雨",55:"毛毛雨",56:"凍雨",57:"凍雨",
-  61:"小雨",63:"中雨",65:"大雨",66:"凍雨",67:"凍雨",71:"小雪",73:"中雪",75:"大雪",80:"短暫陣雨",81:"陣雨",82:"強陣雨",95:"雷雨",96:"雷雨",99:"雷雨"};
-function buildWeather(j){
-  const H = j.hourly, D = j.daily, r1 = x => Math.round(x * 10) / 10;
-  const avg = a => a.reduce((s, x) => s + x, 0) / Math.max(1, a.length);
-  const rows = H.time.map((t, i) => ({h:Number(t.slice(11,13)), t:H.temperature_2m[i], f:H.apparent_temperature[i],
-    rh:H.relative_humidity_2m[i], p:H.precipitation_probability[i], c:H.weather_code[i]}));
-  const period = (label, from, to) => { const r = rows.filter(x => x.h >= from && x.h < to);
-    return {label, feels:r1(avg(r.map(x => x.f))), rainProb:Math.max(...r.map(x => x.p ?? 0)), desc:WMO[Math.max(...r.map(x => x.c))] ?? ""}; };
-  const periods = [period("早上",7,11), period("中午",11,14), period("下午",14,18), period("晚上",18,23)];
-  const day = rows.filter(x => x.h >= 8 && x.h < 20), d = new Date();
-  return {place:WX.place, date:D.time[0], at:`${pad(d.getHours())}:${pad(d.getMinutes())}`, fetchedAt:Date.now(),
-    dayFeels:r1(avg(day.map(x => x.f))), nightFeels:periods[3].feels, high:D.temperature_2m_max[0], low:D.temperature_2m_min[0],
-    rainProb:D.precipitation_probability_max[0], humidity:Math.round(avg(day.map(x => x.rh))), uv:D.uv_index_max[0],
-    desc:WMO[D.weather_code[0]] ?? "", periods};
+/* ---------- 天氣：用手機定位找最近的鄉鎮市區，抓中央氣象署的逐時預報 ---------- */
+// 中央氣象署開放資料平臺的會員授權碼（免費，公開在網頁上沒有費用風險）
+const CWA_KEY = "CWA-63299957-C385-46AD-9EFC-3304B27BAC5E";
+const FALLBACK_PLACE = {county:"新北市", town:"淡水區"}; // 抓不到定位時用
+let TOWNS = null;
+async function loadTowns(){
+  if (!TOWNS) TOWNS = await fetch("towns.json").then(r => { if (!r.ok) throw 0; return r.json(); });
+  return TOWNS;
+}
+function getPosition(){
+  return new Promise(res => {
+    if (!navigator.geolocation) return res(null);
+    navigator.geolocation.getCurrentPosition(p => res({lat:p.coords.latitude, lon:p.coords.longitude}), () => res(null),
+      {enableHighAccuracy:false, timeout:10000, maximumAge:10*60e3});
+  });
+}
+function nearestTown(towns, pos){
+  const k = Math.cos(pos.lat * Math.PI / 180);
+  let best = null, bd = Infinity;
+  for (const [county, town, lat, lon] of towns) {
+    const d = (lat - pos.lat) ** 2 + ((lon - pos.lon) * k) ** 2;
+    if (d < bd) { bd = d; best = {county, town}; }
+  }
+  return best;
+}
+function buildWeather(loc, place){
+  const r1 = x => Math.round(x * 10) / 10;
+  const avg = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : null;
+  const el = name => (loc.WeatherElement.find(e => e.ElementName === name) || {Time:[]}).Time;
+  const val = t => Number(Object.values(t.ElementValue[0])[0]);
+  // 逐時：時間、溫度、體感、濕度
+  const hourly = el("溫度").map((t, i) => ({at:t.DataTime, t:val(t),
+    f:val(el("體感溫度")[i] || t), rh:val(el("相對濕度")[i] || {ElementValue:[{v:NaN}]})}));
+  const rain = el("3小時降雨機率").map(t => ({s:t.StartTime, e:t.EndTime, p:val(t)}));
+  const wx = el("天氣現象").map(t => ({s:t.StartTime, e:t.EndTime, w:t.ElementValue[0].Weather}));
+  const hr = s => Number(s.slice(11,13));
+  const today = hourly.filter(x => x.at.slice(0,10) === TODAY);
+  const inWin = (from, to) => today.filter(x => hr(x.at) >= from && hr(x.at) < to);
+  const rainIn = (from, to) => rain.filter(x => x.s.slice(0,10) === TODAY && hr(x.s) < to && (hr(x.s) + 3) > from);
+  const periods = [["早上",6,11],["中午",11,14],["下午",14,18],["晚上",18,24]].map(([label, from, to]) => {
+    const h = inWin(from, to), r = rainIn(from, to);
+    return {label, feels: h.length ? r1(avg(h.map(x => x.f))) : null, rainProb: r.length ? Math.max(...r.map(x => x.p)) : null};
+  });
+  const next = n => hourly.slice(0, n);
+  const day = inWin(8, 20).length ? inWin(8, 20) : next(12);
+  const night = inWin(18, 24).length ? inWin(18, 24) : next(6);
+  const rest = today.length ? today : next(12);
+  const restRain = rain.filter(x => x.s.slice(0,10) === TODAY);
+  const d = new Date();
+  return {place:`${place.county}${place.town}`, gps:place.gps, source:"中央氣象署", date:TODAY,
+    at:`${pad(d.getHours())}:${pad(d.getMinutes())}`, fetchedAt:Date.now(),
+    dayFeels:r1(avg(day.map(x => x.f))), nightFeels:r1(avg(night.map(x => x.f))),
+    high:Math.max(...rest.map(x => x.t)), low:Math.min(...rest.map(x => x.t)),
+    rainProb:(restRain.length ? restRain : rain.slice(0,4)).reduce((m, x) => Math.max(m, x.p), 0),
+    humidity:Math.round(avg(rest.map(x => x.rh).filter(x => !isNaN(x))) ?? 0),
+    desc:(wx[0] && wx[0].w) || "", periods};
 }
 const Weather = {
+  busy: false,
   async load(force){
     const c = S.weather;
-    if (!force && c && c.date === TODAY && Date.now() - num(c.fetchedAt,0) < 30*60e3) return;
+    if (this.busy) return;
+    if (!force && c && c.date === TODAY && c.source === "中央氣象署" && Date.now() - num(c.fetchedAt,0) < 30*60e3) return;
+    this.busy = true;
     try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${WX.lat}&longitude=${WX.lon}` +
-        "&hourly=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation_probability,weather_code" +
-        "&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,uv_index_max" +
-        "&timezone=Asia%2FTaipei&forecast_days=1";
+      const [towns, pos] = await Promise.all([loadTowns(), getPosition()]);
+      const near = pos && nearestTown(towns.towns, pos);
+      const place = near ? Object.assign(near, {gps:true}) : Object.assign({}, FALLBACK_PLACE, {gps:false});
+      const url = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/${towns.ds[place.county]}?Authorization=${CWA_KEY}` +
+        `&LocationName=${encodeURIComponent(place.town)}&ElementName=${encodeURIComponent("溫度,體感溫度,相對濕度,3小時降雨機率,天氣現象")}`;
       const j = await fetch(url).then(r => { if (!r.ok) throw 0; return r.json(); });
-      S.weather = buildWeather(j); lsSet("wx", S.weather); hideStatus();
+      const loc = j.records.Locations[0].Location[0];
+      S.weather = buildWeather(loc, place); lsSet("wx", S.weather); hideStatus();
       applyWeather(); render();
     } catch { if (!todayWeather()) showStatus("抓不到天氣，先用台北本月平均溫度，可以手動調整。"); }
+    this.busy = false;
   }
 };
 
@@ -586,13 +632,16 @@ function renderToday(){
   const occChips = Object.entries(OCC).map(([k,v]) => `<button class="chip" data-act="occ" data-v="${k}" aria-pressed="${c.occ===k}">${v}</button>`).join("");
   const w = todayWeather(), nightOcc = ["date","night"].includes(c.occ);
   const tLabel = c.src === "auto" ? (nightOcc ? "晚上體感溫度" : "白天體感溫度") : "今天氣溫";
-  const tSub = c.src === "auto" && w ? `${esc(w.place)}・${esc(w.at)} 更新`
+  const tSub = c.src === "auto" && w ? `${w.gps ? "📍 " : ""}${esc(w.place)}・${esc(w.at)} 更新${w.gps ? "" : "（沒抓到定位）"}`
     : c.src === "apple" ? `Apple 天氣 ${esc(c.at || "")} 更新${c.hum != null ? `・濕度 ${c.hum}%` : ""}${c.rain != null ? `・降雨 ${c.rain}%` : ""}`
     : c.manual ? "已手動設定" : "依台北本月平均估計，可調整";
   const wxBlock = w ? `<div class="wx">
       <div class="small">${esc(w.desc)} ${num(w.low,"?")}–${num(w.high,"?")}°C・降雨機率 ${num(w.rainProb,0)}%・濕度 ${num(w.humidity,0)}%${w.uv != null ? `・紫外線 ${Math.round(w.uv)}` : ""}</div>
-      <div class="wx-periods">${(w.periods || []).map(p => `<div><span class="label">${esc(p.label)}</span><b class="mono">${Math.round(num(p.feels,0))}°</b><span class="small muted">☂ ${num(p.rainProb,0)}%</span></div>`).join("")}</div>
-      ${c.manual || c.src === "apple" ? `<button class="btn ghost" data-act="autowx">改用淡水天氣預報</button>` : ""}
+      <div class="wx-periods">${(w.periods || []).map(p => p.feels == null
+        ? `<div class="past"><span class="label">${esc(p.label)}</span><b class="mono">—</b><span class="small muted">已過</span></div>`
+        : `<div><span class="label">${esc(p.label)}</span><b class="mono">${Math.round(p.feels)}°</b><span class="small muted">☂ ${num(p.rainProb,0)}%</span></div>`).join("")}</div>
+      <div class="ctx-row"><span class="small muted">體感溫度・資料來源：${esc(w.source || "")}</span><button class="chip" data-act="wxrefresh">重新抓天氣</button></div>
+      ${c.manual || c.src === "apple" ? `<button class="btn ghost" data-act="autowx">改用氣象署預報</button>` : ""}
     </div>` : "";
   let html = `<div class="card ctx">
     <div class="ctx-row">
@@ -870,6 +919,7 @@ document.addEventListener("click", async e => {
     case "shuffle": S.offset += 1; render(); break;
     case "sync": if (Sync.valid()) Sync.run(); else Sync.connect(); break;
     case "gd-stop": Sync.stop(); break;
+    case "wxrefresh": b.textContent = "抓取中…"; await Weather.load(true); toast(todayWeather() ? `已更新：${todayWeather().place}` : "抓不到天氣"); break;
     case "wear": {
       if (Sync.on && !Sync.valid()) Sync.connect(); // 順便取得同步授權（要在點擊當下）
       const p = byId(id); closeSheet();
