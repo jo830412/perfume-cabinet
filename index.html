@@ -338,13 +338,14 @@ const Store = {
     const ver = String(b.version || "1");
     for (const p of (b.perfumes || [])) {
       const cur = this.data.perfumes[p.id];
-      const old = b.replaces?.[p.id];
       // 只替換已知的錯誤版本，包含從舊備份帶回來的資料。
-      const correction = cur && old && (cur.source === old.source ||
-        (!cur.source && cur.name === old.name && cur.conc === old.conc));
-      if (cur && (cur.del || (!correction && (!cur.b || cur.b === ver)))) continue;
+      const old = cur && [].concat(b.replaces?.[p.id] || []).find(previous =>
+        (previous.source && cur.source === previous.source) ||
+        (!cur.source && cur.name === previous.name && cur.conc === previous.conc));
+      if (cur && (cur.del || (!old && (!cur.b || cur.b === ver)))) continue;
       const keep = cur ? Object.fromEntries(USER_FIELDS.filter(k => k in cur).map(k => [k, cur[k]])) : {};
-      if (correction && old.memo && keep.memo === old.memo) delete keep.memo;
+      if (old?.memo && keep.memo === old.memo) delete keep.memo;
+      if (old?.occ?.length === 0 && keep.occ?.length === 0) delete keep.occ;
       this.data.perfumes[p.id] = Object.assign({}, p, keep, {b:ver, t: cur ? cur.t : 0});
       if (cur && !cur.b) delete this.data.perfumes[p.id].b;
     }
