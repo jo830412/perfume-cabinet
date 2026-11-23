@@ -371,6 +371,7 @@ const Store = {
       const keep = cur ? Object.fromEntries(USER_FIELDS.filter(k => k in cur).map(k => [k, cur[k]])) : {};
       if (old?.memo && keep.memo === old.memo) delete keep.memo;
       if (old?.occ?.length === 0 && keep.occ?.length === 0) delete keep.occ;
+      if (old) delete keep.fragranticaRating;
       this.data.perfumes[p.id] = Object.assign({}, p, keep, {b:ver, t: cur ? cur.t : 0});
       if (cur && !cur.b) delete this.data.perfumes[p.id].b;
     }
@@ -690,7 +691,7 @@ function noteList(notes){
   return rows.length ? `<dl class="note-list" aria-label="香調">${rows.map(([key,label]) =>
     `<dt>${label}</dt><dd>${esc(values[key])}</dd>`).join("")}</dl>` : "";
 }
-const BOTTLE_MASKS = new Set(["17","468","1826","3962","4023","4774","9099","25967","34696","43402","49099","49751","49754",
+const BOTTLE_MASKS = new Set(["17","468","1826","3962","4023","4774","8282","9099","25967","34696","43402","49099","49751","49754",
   "49912","51692","52002","55040","64105","65738","67370","68627","75182","89146","113429","127045"]);
 function photo(p, cls, loading = "lazy"){
   const url = imgUrl(p);
@@ -989,6 +990,10 @@ const VERSION_CONCENTRATIONS = {
   edt:"eau de toilette", edp:"eau de parfum", edc:"eau de cologne",
   parfum:"parfum", extrait:"extrait de parfum"
 };
+const CONCENTRATION_LABELS = {
+  edt:"淡香水（EDT）", edp:"淡香精（EDP）", edc:"古龍水（EDC）",
+  parfum:"香精（Parfum）", extrait:"高濃度香精（Extrait）"
+};
 const VERSION_SUFFIX = /(?:^| )(extrait de parfum|eau de toilette|eau de parfum|eau de cologne|edt|edp|edc|parfum|extrait)$/;
 const SCENTO_API = "https://www.scento.com/api/perfume/v1";
 const versionCache = new Map();
@@ -1004,6 +1009,12 @@ function catalogConc(value){
   return Object.entries(VERSION_CONCENTRATIONS).find(([short,long]) => normalized === short || normalized === long)?.[0] || normalized;
 }
 const versionKey = p => JSON.stringify([catalogText(p.brand),catalogName(p.name),catalogConc(p.conc)]);
+const concentrationLabel = value => CONCENTRATION_LABELS[catalogConc(value)] || value || "未設定";
+
+function versionOptions(requested){
+  const candidates = [...(Store.bundle?.perfumes || []), ...(Store.bundle?.variants || [])];
+  return candidates.filter(item => versionKey({...requested,conc:item.conc}) === versionKey(item));
+}
 
 async function readScento(path){
   const controller = new AbortController();
@@ -1037,8 +1048,7 @@ async function lookupPerfumeVersion(requested){
   const brand = catalogText(requested.brand);
   const conc = VERSION_CONCENTRATIONS[catalogConc(requested.conc)];
   if (!title || !brand || !conc) return null;
-  const candidates = [...(Store.bundle?.perfumes || []), ...(Store.bundle?.variants || [])];
-  const local = candidates.filter(item => versionKey(item) === key);
+  const local = versionOptions(requested).filter(item => versionKey(item) === key);
   if (local.length === 1) return local[0];
   if (local.length > 1) return null;
   if (versionCache.has(key)) return versionCache.get(key);
@@ -1090,7 +1100,7 @@ function editSheet(id){
       <div class="field"><label for="f-brand">品牌</label><input id="f-brand" value="${esc(p.brand)}" required></div>
       <div class="field"><label for="f-name">香水名稱</label><input id="f-name" value="${esc(p.name)}" required></div>
       <div class="field"><label for="f-conc">濃度（選填）</label><select id="f-conc">
-        ${concentrations.map(c => `<option value="${esc(c)}"${c===(p.conc || "") ? " selected" : ""}>${esc(c || "未設定")}</option>`).join("")}
+        ${concentrations.map(c => `<option value="${esc(c)}"${c===(p.conc || "") ? " selected" : ""}>${esc(concentrationLabel(c))}</option>`).join("")}
       </select></div>
       ${id ? '<p class="version-status" id="version-status" role="status" hidden></p>' : ""}
       <details class="disclosure form-options">
@@ -1140,16 +1150,19 @@ function editSheet(id){
     if (key === originalKey) { pending = null; report(""); return null; }
     if (pending?.key === key) return pending.job;
     report("正在查詢對應版本…");
+    const otherVersions = [...new Set(versionOptions(requested)
+      .filter(item => versionKey(item) !== key).map(item => concentrationLabel(item.conc)))];
+    const hint = otherVersions.length ? ` 同名已核對的版本有${otherVersions.join("、")}。` : "";
     const request = {key};
     pending = request;
     request.job = lookupPerfumeVersion(requested).then(version => {
       if (formIsOpen() && versionKey(identity()) === key) {
         report(version ? `找到 ${version.name} · ${version.conc}，儲存後更新版本資料。` :
-          "目前找不到符合的品牌、品名與濃度，原版本資料會保留。");
+          `目前找不到同名的${concentrationLabel(requested.conc)}，原版資料會保留。${hint}`);
       }
       return version;
     }).catch(() => {
-      if (formIsOpen() && versionKey(identity()) === key) report("暫時無法查詢版本，請再按一次儲存重試。");
+      if (formIsOpen() && versionKey(identity()) === key) report("暫時無法查詢版本，請再按一次儲存重試。" + hint);
       return null;
     }).then(version => {
       if (!version && pending === request) pending = null;
