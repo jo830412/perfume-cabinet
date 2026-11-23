@@ -165,6 +165,7 @@ body.sheet-open{position:fixed;left:0;right:0;width:100%;overflow:hidden}
 .form-options{background:var(--bg)}
 .form-section{padding:0 12px 12px}
 .form-actions{margin-top:0;position:sticky;bottom:0;z-index:1;padding:6px 0;background:var(--surface)}
+.version-status{margin:0;padding:10px 12px;border-radius:10px;background:var(--bg);font-size:13px;color:var(--muted)}
 .lookup-link{color:var(--accent);text-underline-offset:3px;font-size:14px;width:fit-content;min-height:44px;display:flex;align-items:center}
 .photo-controls .chip{display:inline-flex;align-items:center;min-height:44px}
 .grip{width:40px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 4px}
@@ -363,7 +364,7 @@ const Store = {
     for (const p of (b.perfumes || [])) {
       const cur = this.data.perfumes[p.id];
       // 只替換已知的錯誤版本，包含從舊備份帶回來的資料。
-      const old = cur && [].concat(b.replaces?.[p.id] || []).find(previous =>
+      const old = cur && !cur.customVersion && [].concat(b.replaces?.[p.id] || []).find(previous =>
         (previous.source && cur.source === previous.source) ||
         (!cur.source && cur.name === previous.name && cur.conc === previous.conc));
       if (cur && (cur.del || (!old && (!cur.b || cur.b === ver)))) continue;
@@ -662,7 +663,8 @@ function fragranticaId(source){
 function imgUrl(p){
   if (p.photo) return p.photo;
   const id = fragranticaId(p.source);
-  return id ? `https://fimgs.net/mdimg/perfume/375x500.${id}.jpg` : null;
+  if (id) return `https://fimgs.net/mdimg/perfume/375x500.${id}.jpg`;
+  return /^https:\/\/armaf\.com\/cdn\/shop\/files\//.test(p.catalogImage || "") ? p.catalogImage : null;
 }
 function communityScore(p){
   const score = num(p.fragranticaRating, Store.bundle?.ratings?.[fragranticaId(p.source)]);
@@ -688,8 +690,8 @@ function noteList(notes){
   return rows.length ? `<dl class="note-list" aria-label="香調">${rows.map(([key,label]) =>
     `<dt>${label}</dt><dd>${esc(values[key])}</dd>`).join("")}</dl>` : "";
 }
-const BOTTLE_MASKS = new Set(["17","468","1826","4023","4774","34696","43402","49099","49751","49754",
-  "49912","51692","52002","55040","64105","65738","67370","68627","89146","113429"]);
+const BOTTLE_MASKS = new Set(["17","468","1826","3962","4023","4774","9099","25967","34696","43402","49099","49751","49754",
+  "49912","51692","52002","55040","64105","65738","67370","68627","75182","89146","113429","127045"]);
 function photo(p, cls, loading = "lazy"){
   const url = imgUrl(p);
   const imageId = !p.photo && url?.match(/\.(\d+)\.jpg$/)?.[1];
@@ -967,6 +969,7 @@ function detailSheet(id){
           <dt>使用</dt><dd>${count[id]||0} 次 · 上次 ${esc(sinceText(last[id]))}</dd>
           ${p.memo ? `<dt>備註</dt><dd>${esc(p.memo)}</dd>` : ""}
           ${fragranticaId(p.source) ? `<dt>資料來源</dt><dd><a href="${esc(p.source)}" target="_blank" rel="noopener">Fragrantica 頁面</a></dd>` : ""}
+          ${/^https:\/\/[^\s]+$/i.test(p.catalogSource || "") ? `<dt>版本資料</dt><dd><a href="${esc(p.catalogSource)}" target="_blank" rel="noopener">${p.catalogSource.startsWith("https://www.scento.com/") ? "Scento" : "品牌官方頁面"}</a></dd>` : ""}
         </dl>
       </div>
     </details>
@@ -980,6 +983,98 @@ function detailSheet(id){
 function fragranticaSearch(brand, name){
   const query = [brand,name].map(value => String(value ?? "").trim()).filter(Boolean).join(" ");
   return "https://www.fragrantica.com/search/#q=" + encodeURIComponent(query);
+}
+
+const VERSION_CONCENTRATIONS = {
+  edt:"eau de toilette", edp:"eau de parfum", edc:"eau de cologne",
+  parfum:"parfum", extrait:"extrait de parfum"
+};
+const VERSION_SUFFIX = /(?:^| )(extrait de parfum|eau de toilette|eau de parfum|eau de cologne|edt|edp|edc|parfum|extrait)$/;
+const SCENTO_API = "https://www.scento.com/api/perfume/v1";
+const versionCache = new Map();
+
+function catalogText(value){
+  const raw = String(value ?? "").normalize("NFKD").replace(/[\p{M}'’]/gu,"");
+  const latin = raw.replace(/\p{Script=Han}+/gu," ");
+  return (/[a-z]/i.test(latin) ? latin : raw).toLowerCase().replace(/[^\p{L}\p{N}]+/gu," ").trim();
+}
+const catalogName = value => catalogText(value).replace(VERSION_SUFFIX,"");
+function catalogConc(value){
+  const normalized = catalogText(value);
+  return Object.entries(VERSION_CONCENTRATIONS).find(([short,long]) => normalized === short || normalized === long)?.[0] || normalized;
+}
+const versionKey = p => JSON.stringify([catalogText(p.brand),catalogName(p.name),catalogConc(p.conc)]);
+
+async function readScento(path){
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(),4500);
+  try {
+    const response = await fetch(SCENTO_API+path,{signal:controller.signal});
+    if (!response.ok) throw new Error("Scento "+response.status);
+    return await response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function scentoProfile(answer,requested){
+  const d = answer.detail;
+  if (!d?.name || versionKey({brand:d.house,name:d.name,conc:d.concentration}) !== versionKey(requested)) return null;
+  const notes = NOTE_FIELDS.flatMap(([key,label]) => {
+    const list = key === "overall" ? d.notes : d.pyramid?.[key];
+    const names = Array.isArray(list) ? list.filter(value => typeof value === "string" && value.trim()) : [];
+    return names.length ? [label+"："+names.join("、")] : [];
+  }).join("｜");
+  if (!notes) return null;
+  const url = answer.scento_page?.url;
+  return {brand:requested.brand,name:d.name,conc:requested.conc,notes,
+    catalogSource:/^https:\/\/www\.scento\.com\//.test(url || "") ? url : "https://www.scento.com/developers/perfume-api"};
+}
+
+async function lookupPerfumeVersion(requested){
+  const key = versionKey(requested);
+  const title = catalogName(requested.name);
+  const brand = catalogText(requested.brand);
+  const conc = VERSION_CONCENTRATIONS[catalogConc(requested.conc)];
+  if (!title || !brand || !conc) return null;
+  const candidates = [...(Store.bundle?.perfumes || []), ...(Store.bundle?.variants || [])];
+  const local = candidates.filter(item => versionKey(item) === key);
+  if (local.length === 1) return local[0];
+  if (local.length > 1) return null;
+  if (versionCache.has(key)) return versionCache.get(key);
+
+  const checkPortrait = async name => {
+    const answer = await readScento("/perfumes/"+encodeURIComponent(name));
+    return scentoProfile(answer,requested);
+  };
+  const direct = await checkPortrait(title+" "+conc);
+  if (direct) {
+    versionCache.set(key,direct);
+    return direct;
+  }
+  const search = await readScento("/search?"+new URLSearchParams({q:brand+" "+title,kind:"perfume"}));
+  const alternatives = (search.detail?.matches || []).filter(item =>
+    catalogText(item.house) === brand && catalogName(item.name) === title);
+  const terms = [...new Set(alternatives.map(item =>
+    item.page?.match(/^https:\/\/www\.scento\.com\/perfumes\/([a-z\d-]+)$/i)?.[1] || item.name))].slice(0,3);
+  const results = (await Promise.all(terms.map(checkPortrait))).filter(Boolean);
+  const match = results.length === 1 ? results[0] : null;
+  if (match) versionCache.set(key,match);
+  return match;
+}
+
+function applyPerfumeVersion(p,version){
+  // 舊版的資料與數值不可沿用；個人評分、剩量、備註、自訂照片、紀錄 ID 由原品項保留。
+  for (const key of ["votes","seasons","tMin","tMax"]) delete p[key];
+  Object.assign(p, {
+    name:version.name, conc:version.conc, notes:version.notes || "",
+    source:version.source || "", catalogSource:version.catalogSource || "", catalogImage:version.catalogImage || "",
+    families:version.families || [], accords:version.accords || [],
+    strength:version.strength ?? null, longevity:version.longevity ?? null,
+    fragranticaRating:version.fragranticaRating ?? null, customVersion:true
+  });
+  if (version.seasons) p.seasons = version.seasons;
+  if (version.votes) p.votes = version.votes;
 }
 
 function editSheet(id){
@@ -997,6 +1092,7 @@ function editSheet(id){
       <div class="field"><label for="f-conc">濃度（選填）</label><select id="f-conc">
         ${concentrations.map(c => `<option value="${esc(c)}"${c===(p.conc || "") ? " selected" : ""}>${esc(c || "未設定")}</option>`).join("")}
       </select></div>
+      ${id ? '<p class="version-status" id="version-status" role="status" hidden></p>' : ""}
       <details class="disclosure form-options">
         <summary>香調與 Fragrantica</summary>
         <div class="form-section">
@@ -1029,18 +1125,69 @@ function editSheet(id){
       <div class="actions form-actions"><button class="btn primary" type="submit">${id ? "儲存" : "新增香水"}</button></div>
     </form>`);
   const form = $("#pform");
+  const versionStatus = $("#version-status");
+  const identity = () => ({brand:$("#f-brand").value.trim(),name:$("#f-name").value.trim(),conc:$("#f-conc").value});
+  const originalKey = versionKey(p);
+  let pending = null;
+  const formIsOpen = () => form.isConnected && !$("#sheet").hidden;
+  const report = message => {
+    if (!versionStatus) return;
+    versionStatus.textContent = message;
+    versionStatus.hidden = !message;
+  };
+  function prepareVersion(requested){
+    const key = versionKey(requested);
+    if (key === originalKey) { pending = null; report(""); return null; }
+    if (pending?.key === key) return pending.job;
+    report("正在查詢對應版本…");
+    const request = {key};
+    pending = request;
+    request.job = lookupPerfumeVersion(requested).then(version => {
+      if (formIsOpen() && versionKey(identity()) === key) {
+        report(version ? `找到 ${version.name} · ${version.conc}，儲存後更新版本資料。` :
+          "目前找不到符合的品牌、品名與濃度，原版本資料會保留。");
+      }
+      return version;
+    }).catch(() => {
+      if (formIsOpen() && versionKey(identity()) === key) report("暫時無法查詢版本，請再按一次儲存重試。");
+      return null;
+    }).then(version => {
+      if (!version && pending === request) pending = null;
+      return version;
+    });
+    return request.job;
+  }
   form.addEventListener("input", e => {
-    if (e.target.id === "f-brand" || e.target.id === "f-name") {
+    if (e.target.id === "f-brand" || e.target.id === "f-name" || e.target.id === "f-conc") {
       $("#f-lookup").href = fragranticaSearch($("#f-brand").value,$("#f-name").value);
+      if (versionKey(identity()) !== pending?.key) report("");
     }
+  });
+  form.addEventListener("change", e => {
+    if (id && ["f-brand","f-name","f-conc"].includes(e.target.id)) prepareVersion(identity());
   });
   form.addEventListener("invalid", e => {
     const group = e.target.closest("details");
     if (group) group.open = true;
   }, true);
-  form.addEventListener("submit", e => { e.preventDefault(); submitForm(p); });
+  form.addEventListener("submit", async e => {
+    e.preventDefault();
+    const requested = identity();
+    const key = versionKey(requested);
+    const submit = form.querySelector('[type="submit"]');
+    if (submit.disabled) return;
+    submit.disabled = true;
+    try {
+      const changed = id && key !== originalKey;
+      const version = changed ? await prepareVersion(requested) : null;
+      if (!formIsOpen() || versionKey(identity()) !== key || (changed && !version)) return;
+      await submitForm(p,version);
+    } finally {
+      submit.disabled = false;
+    }
+  });
 }
-async function submitForm(orig){
+async function submitForm(orig,version){
   const v = id => $(id).value.trim();
   const n = id => { const value = $(id).valueAsNumber; return Number.isFinite(value) ? value : null; };
   const picked = sel => [...document.querySelectorAll(sel+" .chip[aria-pressed='true']")].map(b => b.dataset.v);
@@ -1067,6 +1214,7 @@ async function submitForm(orig){
     accords:keptAccords, families, seasons, occ:picked("#f-occ"),
     strength:n("#f-str"), longevity:n("#f-lon"), fragranticaRating:n("#f-score"),
     memo:v("#f-memo"), source:v("#f-src")});
+  if (version) applyPerfumeVersion(p,version);
   await act(() => Store.savePerfume(p, true), orig.id ? "已儲存" : "已新增香水");
   detailSheet(id);
 }
