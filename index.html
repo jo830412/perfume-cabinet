@@ -173,6 +173,18 @@ textarea.io{min-height:140px;font-family:var(--font-data);font-size:12px}
 .wx-periods div{background:var(--surface-2);border-radius:10px;padding:8px 4px;display:grid;justify-items:center;gap:2px}
 .wx-periods b{font-weight:500;font-size:18px}
 .wx-periods .past{opacity:.45}
+/* 香水圖片：白底相片框（瓶身照本身是白底），兩種主題都用白色 */
+.ph{display:block;background:#fff;border-radius:10px;overflow:hidden;flex:none;position:relative}
+.ph::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 1px var(--line)}
+.ph img{display:block;width:100%;height:100%;object-fit:contain}
+.ph:empty{background:var(--surface-2)}
+.ph-lg{width:96px;height:128px}
+.ph-sm{width:42px;height:56px;border-radius:8px}
+.ph-slot{width:100%;aspect-ratio:3/4;max-width:100%;border-radius:6px;margin-bottom:6px}
+.pick-top{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:start}
+.alt{grid-template-columns:6px auto minmax(0,1fr) auto}
+.wet-pill{font-size:13px;padding:6px 12px;border-radius:999px;background:var(--surface-2)}
+.wet-pill[data-wet="true"]{background:var(--accent-soft);color:var(--accent);font-weight:500}
 
 /* nav */
 .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);padding-left:max(8px,env(safe-area-inset-left,0px));padding-right:max(8px,env(safe-area-inset-right,0px))}
@@ -288,7 +300,7 @@ function readWeatherHash(){
 const todayWeather = () => (S.weather && S.weather.date === TODAY) ? S.weather : null;
 function applyWeather(){
   const w = todayWeather();
-  if (!w || S.ctx.manual || S.ctx.src === "apple") return;
+  if (!w) return;
   const night = ["date","night"].includes(S.ctx.occ);
   S.ctx = Object.assign({}, S.ctx, {temp: Math.round(num(night ? w.nightFeels : w.dayFeels, S.ctx.temp)),
     wet: num(w.rainProb,0) >= 50 || num(w.humidity,0) >= 90, guessed:false, src:"auto"});
@@ -297,7 +309,7 @@ function applyWeather(){
 /* ---------- 資料：存在手機（localStorage），可同步到 Google 雲端硬碟 ---------- */
 // Google Cloud Console →「API 和服務」→「憑證」→ OAuth 用戶端 ID（網頁應用程式）。這個 ID 是公開的，不是密碼。
 const GOOGLE_CLIENT_ID = "288072368244-huo1rnfas2s4rovnab1cs91hc6n6e3lt.apps.googleusercontent.com";
-const USER_FIELDS = ["rating","remaining","memo","row","col","occ"];
+const USER_FIELDS = ["rating","remaining","memo","row","col","occ","photo"];
 const Store = {
   data: {perfumes:{}, wears:{}, prefs:{avoidDays:4, saveLow:true, t:0}},
   async init(){
@@ -601,6 +613,14 @@ function recommend(today, ctx){
 
 /* ---------- rendering helpers ---------- */
 const famChips = p => (p.families || []).map(f => `<span class="fam" style="--c:${accColor(f)}"><i></i>${esc(accName(f))}</span>`).join(" ");
+// 香水圖片：自己拍的優先，否則用 Fragrantica 的瓶身照
+function imgUrl(p){
+  if (p.photo) return p.photo;
+  const m = String(p.source || "").match(/^https:\/\/www\.fragrantica\.asia\/perfume\/.+-(\d+)\.html$/);
+  return m ? `https://fimgs.net/mdimg/perfume/375x500.${m[1]}.jpg` : null;
+}
+const photo = (p, cls) => { const u = imgUrl(p);
+  return `<span class="ph ${cls}">${u ? `<img src="${esc(u)}" alt="" loading="lazy" decoding="async" onerror="this.remove()">` : ""}</span>`; };
 const pos = p => (p.row && p.col) ? `第 ${p.row} 排 · 第 ${p.col} 罐` : "未擺放";
 const posShort = p => (p.row && p.col) ? `${p.row}-${p.col}` : "—";
 function meter(v){
@@ -641,15 +661,14 @@ function renderToday(){
         ? `<div class="past"><span class="label">${esc(p.label)}</span><b class="mono">—</b><span class="small muted">已過</span></div>`
         : `<div><span class="label">${esc(p.label)}</span><b class="mono">${Math.round(p.feels)}°</b><span class="small muted">☂ ${num(p.rainProb,0)}%</span></div>`).join("")}</div>
       <div class="ctx-row"><span class="small muted">體感溫度・資料來源：${esc(w.source || "")}</span><button class="chip" data-act="wxrefresh">重新抓天氣</button></div>
-      ${c.manual || c.src === "apple" ? `<button class="btn ghost" data-act="autowx">改用氣象署預報</button>` : ""}
     </div>` : "";
   let html = `<div class="card ctx">
     <div class="ctx-row">
       <div><div class="label">${tLabel}</div><div class="small muted">${tSub}</div></div>
-      <div class="temp"><button data-act="temp" data-v="-1" aria-label="降低 1 度">−</button><output id="temp-out">${c.temp}°C</output><button data-act="temp" data-v="1" aria-label="提高 1 度">+</button></div>
+      <div class="temp"><output id="temp-out">${c.temp}°C</output></div>
     </div>
     ${wxBlock}
-    <div class="ctx-row"><div class="label">天氣</div><div class="chips"><button class="chip" data-act="wet" aria-pressed="${!!c.wet}">下雨 / 潮濕</button></div></div>
+    <div class="ctx-row"><div class="label">今天判定</div><span class="wet-pill" data-wet="${!!c.wet}">${c.wet ? "☔ 可能下雨或潮濕，優先挑清爽型" : "☀ 不太會下雨"}</span></div>
     <div><div class="label" style="margin-bottom:8px">今天的場合</div><div class="chips">${occChips}</div></div>
   </div>`;
   if (!S.perfumes.length) { el.innerHTML = html + emptyState(); return; }
@@ -668,9 +687,14 @@ function renderToday(){
   const p = main.p, {last, count} = lastWorn(null);
   html += `<article class="card pick" style="--c:${famColor(p)}">
     <div class="eyebrow"><span>${worn ? "今天噴的是" : "今日推薦"}</span><span class="mono">${esc(pos(p))}</span></div>
-    <div class="brand">${esc(p.brand)} · ${esc(p.conc || "")}</div>
-    <div class="pname">${esc(p.name)}</div>
-    <div class="chips">${famChips(p)}</div>
+    <div class="pick-top">
+      <div style="min-width:0">
+        <div class="brand">${esc(p.brand)} · ${esc(p.conc || "")}</div>
+        <div class="pname">${esc(p.name)}</div>
+        <div class="chips">${famChips(p)}</div>
+      </div>
+      ${photo(p, "ph-lg")}
+    </div>
     ${main.why.length ? `<ul class="why">${main.why.map(w => `<li>${esc(w)}</li>`).join("")}</ul>` : ""}
     ${main.tips.length ? `<div class="tips">${main.tips.map(esc).join("・")}</div>` : ""}
     <div class="facts">
@@ -685,7 +709,7 @@ function renderToday(){
   </article>`;
   html += `<div class="toolbar" style="justify-content:space-between"><h2>${worn ? "想換的話" : "其他選擇"}</h2>${worn ? "" : `<button class="btn ghost" data-act="shuffle" style="min-height:38px;padding:6px 12px">換一批</button>`}</div>
   <div class="alts">${alts.map(r => `<button class="alt" data-act="open" data-id="${esc(r.p.id)}" style="--c:${famColor(r.p)}">
-      <span class="bar"></span>
+      <span class="bar"></span>${photo(r.p, "ph-sm")}
       <span style="min-width:0"><div class="n">${esc(r.p.name)}</div><div class="s">${esc(r.why[0] || (FAM[(r.p.families||[])[0]] || ""))}</div></span>
       <span class="pos">${esc(posShort(r.p))}<br>${esc(sinceText(last[r.p.id]))}</span>
     </button>`).join("")}</div>`;
@@ -718,7 +742,7 @@ function renderShelf(){
         const p = placed.find(x => x.row === r && x.col === c);
         if (!p) { html += `<div class="slot empty"></div>`; continue; }
         html += `<button class="slot ${match(p) ? "" : "dim"} ${todayId===p.id ? "today" : ""}" data-act="open" data-id="${esc(p.id)}" style="--c:${famColor(p)}">
-          <span><div class="cap"></div><div class="sn">${esc(p.name)}</div></span><span class="sd">${esc(sinceText(last[p.id]))}</span></button>`;
+          <span><div class="cap"></div>${photo(p, "ph-slot")}<div class="sn">${esc(p.name)}</div></span><span class="sd">${esc(sinceText(last[p.id]))}</span></button>`;
       }
       html += `</div></div>`;
     }
@@ -734,7 +758,7 @@ function renderShelf(){
 }
 function listRow(p, last){
   return `<button class="alt" data-act="open" data-id="${esc(p.id)}" style="--c:${famColor(p)}">
-    <span class="bar"></span>
+    <span class="bar"></span>${photo(p, "ph-sm")}
     <span style="min-width:0"><div class="n">${esc(p.name)}</div><div class="s">${esc(p.brand)} · ${(p.families||[]).map(f => esc(FAM[f]||f)).join("、")}</div></span>
     <span class="pos">${esc(posShort(p))}<br>${esc(sinceText(last[p.id]))}</span></button>`;
 }
@@ -818,10 +842,18 @@ function detailSheet(id){
   const p = byId(id); if (!p) return;
   const {last, count} = lastWorn(null);
   const isToday = S.wears[TODAY] && S.wears[TODAY].perfumeId === id;
-  openSheet(`<div style="--c:${famColor(p)}">
-      <div class="small muted">${esc(p.brand)} · ${esc(p.conc||"")}</div>
-      <h3>${esc(p.name)}</h3>
-      <div class="chips" style="margin-top:10px">${famChips(p)}</div>
+  openSheet(`<div class="pick-top" style="--c:${famColor(p)}">
+      <div style="min-width:0">
+        <div class="small muted">${esc(p.brand)} · ${esc(p.conc||"")}</div>
+        <h3>${esc(p.name)}</h3>
+        <div class="chips" style="margin-top:10px">${famChips(p)}</div>
+      </div>
+      ${photo(p, "ph-lg")}
+    </div>
+    <div class="chips">
+      <label class="chip" for="photo-in">${p.photo ? "換一張照片" : "換成我拍的照片"}</label>
+      <input type="file" id="photo-in" accept="image/*" data-id="${esc(id)}" hidden>
+      ${p.photo ? `<button class="chip" data-act="unphoto" data-id="${esc(id)}">改回原本圖片</button>` : ""}
     </div>
     ${(p.accords && p.accords.length) ? `<div><div class="label">主要香調</div><div class="accbars">${p.accords.map(([k,v]) =>
         `<div class="ab"><span>${esc(accName(k))}</span><span class="at"><i style="width:${num(v,0)}%;background:${accColor(k)}"></i></span></div>`).join("")}</div></div>` : ""}
@@ -919,6 +951,7 @@ document.addEventListener("click", async e => {
     case "shuffle": S.offset += 1; render(); break;
     case "sync": if (Sync.valid()) Sync.run(); else Sync.connect(); break;
     case "gd-stop": Sync.stop(); break;
+    case "unphoto": { const p = byId(id); if (p) { const q = Object.assign({}, p); delete q.photo; await Store.savePerfume(q); detailSheet(id); toast("已改回原本圖片"); } break; }
     case "wxrefresh": b.textContent = "抓取中…"; await Weather.load(true); toast(todayWeather() ? `已更新：${todayWeather().place}` : "抓不到天氣"); break;
     case "wear": {
       if (Sync.on && !Sync.valid()) Sync.connect(); // 順便取得同步授權（要在點擊當下）
@@ -968,6 +1001,19 @@ document.addEventListener("click", async e => {
   }
 });
 document.addEventListener("input", e => { if (e.target.id === "shelf-q") { S.q = e.target.value; const pos = e.target.selectionStart; renderShelf(); const i = $("#shelf-q"); i.focus(); try { i.setSelectionRange(pos,pos); } catch {} } });
+// 自己拍的照片：縮到 480px 高的 JPEG（約 40KB）再存，才放得進手機儲存空間和雲端備份
+document.addEventListener("change", async e => {
+  if (e.target.id !== "photo-in" || !e.target.files || !e.target.files[0]) return;
+  const id = e.target.dataset.id, p = byId(id); if (!p) return;
+  try {
+    const bmp = await createImageBitmap(e.target.files[0]);
+    const H = 480, scale = Math.min(1, H / bmp.height), w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
+    const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+    cv.getContext("2d").drawImage(bmp, 0, 0, w, h);
+    await Store.savePerfume(Object.assign({}, p, {photo: cv.toDataURL("image/jpeg", 0.8)}));
+    detailSheet(id); toast("照片已更新");
+  } catch { toast("這張照片讀不到，換一張試試"); }
+});
 $("#backdrop").addEventListener("click", closeSheet);
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeSheet(); });
 
