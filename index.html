@@ -311,6 +311,7 @@ function applyWeather(){
 const GOOGLE_CLIENT_ID = "288072368244-huo1rnfas2s4rovnab1cs91hc6n6e3lt.apps.googleusercontent.com";
 const USER_FIELDS = ["rating","remaining","memo","row","col","occ","photo"];
 const Store = {
+  bundle: null,
   data: {perfumes:{}, wears:{}, prefs:{avoidDays:4, saveLow:true, t:0}},
   async init(){
     const saved = lsGet(LKEY);
@@ -331,14 +332,21 @@ const Store = {
     ws.forEach(w => { if (w && w.date) d.wears[w.date] = Object.assign({t:0}, w); });
     return d;
   },
-  // 網站附的香水資料更新時套用，但保留你的評分、剩量、備註、位置、場合；完整編輯過或刪掉的不動
+  // 更新網站附的香水資料並保留個人欄位；跳過已刪除的香水和無須更正的自訂資料。
   mergeBundle(b){
+    this.bundle = b;
     const ver = String(b.version || "1");
     for (const p of (b.perfumes || [])) {
       const cur = this.data.perfumes[p.id];
-      if (cur && (cur.del || !cur.b || cur.b === ver)) continue;
+      const old = b.replaces?.[p.id];
+      // 只替換已知的錯誤版本，包含從舊備份帶回來的資料。
+      const correction = cur && old && (cur.source === old.source ||
+        (!cur.source && cur.name === old.name && cur.conc === old.conc));
+      if (cur && (cur.del || (!correction && (!cur.b || cur.b === ver)))) continue;
       const keep = cur ? Object.fromEntries(USER_FIELDS.filter(k => k in cur).map(k => [k, cur[k]])) : {};
+      if (correction && old.memo && keep.memo === old.memo) delete keep.memo;
       this.data.perfumes[p.id] = Object.assign({}, p, keep, {b:ver, t: cur ? cur.t : 0});
+      if (cur && !cur.b) delete this.data.perfumes[p.id].b;
     }
   },
   // 每筆資料各自比修改時間，新的贏
@@ -349,6 +357,7 @@ const Store = {
       if (!cur || num(v.t,0) > num(cur.t,0)) { this.data[col][k] = v; changed = true; }
     }
     if (num(r.prefs.t,0) > num(this.data.prefs.t,0)) { this.data.prefs = r.prefs; changed = true; }
+    if (changed && this.bundle) this.mergeBundle(this.bundle);
     return changed;
   },
   save(sync = true){
@@ -581,8 +590,8 @@ function recommend(today, ctx){
       const night = ["date","night"].includes(ctx.occ), dn = num(sea[night ? "night" : "day"], 70);
       s += (dn - 60) / 40 * .8;
       if (night && dn >= 85) why.push([1.4, "網友票選很適合晚上"]);
-    } else {
-      const lo = num(p.tMin, 12), hi = num(p.tMax, 30);
+    } else if (Number.isFinite(p.tMin) && Number.isFinite(p.tMax)) {
+      const lo = p.tMin, hi = p.tMax;
       if (t >= lo && t <= hi) { s += 2.5; why.push([2.4, `${t}°C 在它的舒適溫度 ${lo}–${hi}°C 之間`]); }
       else s -= (t < lo ? lo - t : t - hi) * 0.45;
     }
@@ -591,7 +600,8 @@ function recommend(today, ctx){
       if (fresh >= .5 && heavy < .2) why.push([1.6, "下雨或潮濕的日子，清爽型比較不悶"]);
       if (st >= 4.5) s -= 1;
     }
-    if ((p.occ || []).includes(ctx.occ)) { s += 2.5; why.push([2, `適合${OCC[ctx.occ]}`]); } else s -= 1;
+    if (p.occ?.includes(ctx.occ)) { s += 2.5; why.push([2, `適合${OCC[ctx.occ]}`]); }
+    else if (p.occ?.length) s -= 1;
     if (ctx.occ === "office" && st >= 4.5) s -= 1.5;
     if (["date","night","formal"].includes(ctx.occ) && num(p.longevity,3) >= 4) { s += .6; why.push([1, "留香久，撐得過整晚"]); }
     const lw = last[p.id];
@@ -624,7 +634,8 @@ const photo = (p, cls) => { const u = imgUrl(p);
 const pos = p => (p.row && p.col) ? `第 ${p.row} 排 · 第 ${p.col} 罐` : "未擺放";
 const posShort = p => (p.row && p.col) ? `${p.row}-${p.col}` : "—";
 function meter(v){
-  v = num(v, 0); let h = "";
+  if (!Number.isFinite(v)) return '<span class="small muted">未評估</span>';
+  let h = "";
   for (let i = 1; i <= 5; i++) h += `<span class="${v >= i ? "on" : (v >= i - .5 ? "half" : "")}"></span>`;
   return `<div class="meter" aria-label="${v} / 5">${h}</div>`;
 }
@@ -689,7 +700,7 @@ function renderToday(){
     <div class="eyebrow"><span>${worn ? "今天噴的是" : "今日推薦"}</span><span class="mono">${esc(pos(p))}</span></div>
     <div class="pick-top">
       <div style="min-width:0">
-        <div class="brand">${esc(p.brand)} · ${esc(p.conc || "")}</div>
+        <div class="brand">${esc([p.brand, p.conc].filter(Boolean).join(" · "))}</div>
         <div class="pname">${esc(p.name)}</div>
         <div class="chips">${famChips(p)}</div>
       </div>
@@ -759,7 +770,7 @@ function renderShelf(){
 function listRow(p, last){
   return `<button class="alt" data-act="open" data-id="${esc(p.id)}" style="--c:${famColor(p)}">
     <span class="bar"></span>${photo(p, "ph-sm")}
-    <span style="min-width:0"><div class="n">${esc(p.name)}</div><div class="s">${esc(p.brand)} · ${(p.families||[]).map(f => esc(FAM[f]||f)).join("、")}</div></span>
+    <span style="min-width:0"><div class="n">${esc(p.name)}</div><div class="s">${esc([p.brand, (p.families||[]).map(f => FAM[f]||f).join("、")].filter(Boolean).join(" · "))}</div></span>
     <span class="pos">${esc(posShort(p))}<br>${esc(sinceText(last[p.id]))}</span></button>`;
 }
 
@@ -844,7 +855,7 @@ function detailSheet(id){
   const isToday = S.wears[TODAY] && S.wears[TODAY].perfumeId === id;
   openSheet(`<div class="pick-top" style="--c:${famColor(p)}">
       <div style="min-width:0">
-        <div class="small muted">${esc(p.brand)} · ${esc(p.conc||"")}</div>
+        <div class="small muted">${esc([p.brand, p.conc].filter(Boolean).join(" · "))}</div>
         <h3>${esc(p.name)}</h3>
         <div class="chips" style="margin-top:10px">${famChips(p)}</div>
       </div>
@@ -862,9 +873,9 @@ function detailSheet(id){
     <dl class="kv">
       <dt>香調</dt><dd>${esc(p.notes || "—")}</dd>
       <dt>位置</dt><dd class="mono">${esc(pos(p))}</dd>
-      ${p.seasons ? "" : `<dt>舒適溫度</dt><dd class="mono">${num(p.tMin,"?")}–${num(p.tMax,"?")}°C</dd>`}
+      ${Number.isFinite(p.tMin) && Number.isFinite(p.tMax) ? `<dt>舒適溫度</dt><dd class="mono">${p.tMin}–${p.tMax}°C</dd>` : ""}
       <dt>場合</dt><dd>${(p.occ||[]).map(o => esc(OCC[o]||o)).join("、") || "—"}</dd>
-      <dt>擴散 / 持久</dt><dd><span class="mono">${num(p.strength,"?")} / ${num(p.longevity,"?")}</span>${p.votes ? `<span class="small muted">（依網友投票換算，滿分 5）</span>` : ""}</dd>
+      <dt>擴散 / 持久</dt><dd><span class="mono">${num(p.strength,"未評估")} / ${num(p.longevity,"未評估")}</span>${p.votes ? `<span class="small muted">（依網友投票換算，滿分 5）</span>` : ""}</dd>
       <dt>使用</dt><dd>${count[id]||0} 次 · 上次 ${esc(sinceText(last[id]))}</dd>
       ${p.memo ? `<dt>備註</dt><dd>${esc(p.memo)}</dd>` : ""}
       ${/^https:\/\/www\.fragrantica\.asia\//.test(p.source || "") ? `<dt>資料來源</dt><dd><a href="${esc(p.source)}" target="_blank" rel="noopener">Fragrantica 頁面</a></dd>` : ""}
@@ -916,13 +927,13 @@ async function submitForm(orig){
   const accords = picked("#f-fam").map(k => [k, num(oldPct[k], 60)]).sort((a,b) => b[1] - a[1]);
   // 季節：勾選狀態沒變就保留原本的投票數字
   const seaOn = picked("#f-sea"), os = orig.seasons || {};
-  const seasons = Object.fromEntries(Object.keys(SEASON).map(k => {
+  const seasons = orig.seasons || seaOn.length ? Object.fromEntries(Object.keys(SEASON).map(k => {
     const was = num(os[k], 50), on = seaOn.includes(k);
     return [k, on ? (was >= 70 ? was : 85) : (was < 70 ? was : 40)];
-  }));
+  })) : undefined;
   const p = Object.assign({}, orig, {id, brand:v("#f-brand"), name:v("#f-name"), conc:v("#f-conc"),
     accords, families: accords.slice(0,3).map(a => a[0]), seasons, notes:v("#f-notes"),
-    occ:picked("#f-occ"), strength:n("#f-str",3), longevity:n("#f-lon",3),
+    occ:picked("#f-occ"), strength:n("#f-str",null), longevity:n("#f-lon",null),
     row:n("#f-row",null), col:n("#f-col",null), memo:v("#f-memo"), source:v("#f-src")});
   delete p.tMin; delete p.tMax;
   await act(() => Store.savePerfume(p, true), "已儲存");
@@ -996,6 +1007,7 @@ document.addEventListener("click", async e => {
       Object.values(data.perfumes).forEach(p => { p.t = now; delete p.b; Store.data.perfumes[p.id] = p; });
       Object.values(data.wears).forEach(w => { w.t = now; Store.data.wears[w.date] = w; });
       if (data.prefs) Store.data.prefs = Object.assign({}, data.prefs, {t:now});
+      if (Store.bundle) Store.mergeBundle(Store.bundle);
       Store.save(); toast("匯入完成"); break;
     }
   }
