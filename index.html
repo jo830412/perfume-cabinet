@@ -154,6 +154,18 @@ body.sheet-open{position:fixed;left:0;right:0;width:100%;overflow:hidden}
 .detail-controls .chip{min-height:44px}
 .detail-profile{background:var(--bg)}
 .profile-body{display:grid;gap:14px;padding:0 12px 12px}
+.community-score{display:inline-flex;gap:6px;align-items:baseline;color:var(--muted);font-size:12px}
+.community-score strong{font-size:14px;color:var(--ink);font-variant-numeric:tabular-nums}
+.detail-score{margin-top:6px}
+.note-list{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 12px;margin:0;padding:12px;background:var(--bg);border-radius:12px;font-size:14px}
+.note-list dt{color:var(--muted);white-space:nowrap}
+.note-list dd{margin:0;overflow-wrap:anywhere;white-space:pre-line}
+.perfume-form,.form-section{display:grid;gap:12px}
+.perfume-form :is(input,select,textarea){font-size:16px}
+.form-options{background:var(--bg)}
+.form-section{padding:0 12px 12px}
+.form-actions{margin-top:0;position:sticky;bottom:0;z-index:1;padding:6px 0;background:var(--surface)}
+.lookup-link{color:var(--accent);text-underline-offset:3px;font-size:14px;width:fit-content;min-height:44px;display:flex;align-items:center}
 .photo-controls .chip{display:inline-flex;align-items:center;min-height:44px}
 .grip{width:40px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 4px}
 .sheet h3{font-family:var(--font-display);font-weight:400;font-size:26px;line-height:1.15;margin:0;overflow-wrap:anywhere}
@@ -321,7 +333,7 @@ function applyWeather(){
 /* ---------- 資料：存在手機（localStorage），可同步到 Google 雲端硬碟 ---------- */
 // Google Cloud Console →「API 和服務」→「憑證」→ OAuth 用戶端 ID（網頁應用程式）。這個 ID 是公開的，不是密碼。
 const GOOGLE_CLIENT_ID = "288072368244-huo1rnfas2s4rovnab1cs91hc6n6e3lt.apps.googleusercontent.com";
-const USER_FIELDS = ["rating","remaining","memo","row","col","occ","photo"];
+const USER_FIELDS = ["rating","remaining","memo","row","col","occ","photo","fragranticaRating"];
 const Store = {
   bundle: null,
   data: {perfumes:{}, wears:{}, prefs:{avoidDays:4, saveLow:true, t:0}},
@@ -642,10 +654,39 @@ function recommend(today, ctx){
 /* ---------- rendering helpers ---------- */
 const famChips = p => (p.families || []).map(f => `<span class="fam" style="--c:${accColor(f)}"><i></i>${esc(accName(f))}</span>`).join(" ");
 // 香水圖片：自己拍的優先，否則用 Fragrantica 的瓶身照
+const FRAGRANTICA_PAGE = /^https:\/\/(?:www\.)?fragrantica\.(?:asia|com)\/(?:perfume\/[^?#]+-(\d+)\.html|p\/(\d+)\/?)(?:[?#].*)?$/i;
+function fragranticaId(source){
+  const match = String(source || "").match(FRAGRANTICA_PAGE);
+  return match?.[1] || match?.[2];
+}
 function imgUrl(p){
   if (p.photo) return p.photo;
-  const m = String(p.source || "").match(/^https:\/\/www\.fragrantica\.asia\/perfume\/.+-(\d+)\.html$/);
-  return m ? `https://fimgs.net/mdimg/perfume/375x500.${m[1]}.jpg` : null;
+  const id = fragranticaId(p.source);
+  return id ? `https://fimgs.net/mdimg/perfume/375x500.${id}.jpg` : null;
+}
+function communityScore(p){
+  const score = num(p.fragranticaRating, Store.bundle?.ratings?.[fragranticaId(p.source)]);
+  return Number.isFinite(score) && score >= 1 && score <= 5
+    ? `<span class="community-score">Fragrantica <strong>${score.toFixed(2)}</strong><span>/ 5</span></span>` : "";
+}
+const NOTE_FIELDS = [["top","前調"],["heart","中調"],["base","後調"],["overall","整體香調"]];
+const NOTE_KEYS = {首調:"top",前調:"top",中調:"heart",基調:"base",尾調:"base",後調:"base",整體香調:"overall"};
+function splitNotes(notes){
+  const result = {};
+  const parts = String(notes || "").split(/(?:[｜|]|\r?\n)\s*(?=(?:首調|前調|中調|基調|尾調|後調|整體香調)\s*[:：])/);
+  for (const part of parts) {
+    const match = part.trim().match(/^(首調|前調|中調|基調|尾調|後調|整體香調)\s*[:：]\s*([\s\S]*)$/);
+    const key = match ? NOTE_KEYS[match[1]] : "overall";
+    const value = (match ? match[2] : part).trim();
+    if (value) result[key] = result[key] ? result[key] + "｜" + value : value;
+  }
+  return result;
+}
+function noteList(notes){
+  const values = splitNotes(notes);
+  const rows = NOTE_FIELDS.filter(([key]) => values[key]);
+  return rows.length ? `<dl class="note-list" aria-label="香調">${rows.map(([key,label]) =>
+    `<dt>${label}</dt><dd>${esc(values[key])}</dd>`).join("")}</dl>` : "";
 }
 const BOTTLE_MASKS = new Set(["17","468","1826","4023","4774","34696","43402","49099","49751","49754",
   "49912","51692","52002","55040","64105","65738","67370","68627","89146","113429"]);
@@ -784,6 +825,7 @@ function renderShelfResults(){
       ${photo(p, "ph-card")}
       <span class="n">${esc(p.name)}</span>
       <span class="s">${esc([p.brand,p.conc].filter(Boolean).join(" · "))}</span>
+      ${communityScore(p)}
       <span class="recent">${worn ? "今天已噴" : esc(sinceText(last[p.id]))}</span>
     </button>`;
   }).join("")}</div>`;
@@ -892,10 +934,12 @@ function detailSheet(id){
   const p = byId(id); if (!p) return;
   const {last, count} = lastWorn(null);
   const isToday = S.wears[TODAY] && S.wears[TODAY].perfumeId === id;
+  const score = communityScore(p);
   openSheet(`<div class="pick-top" style="--c:${famColor(p)}">
       <div style="min-width:0">
         <div class="small muted">${esc([p.brand, p.conc].filter(Boolean).join(" · "))}</div>
         <h3>${esc(p.name)}</h3>
+        ${score ? `<div class="detail-score">${score}</div>` : ""}
         <div class="chips" style="margin-top:10px">${famChips(p)}</div>
       </div>
       ${photo(p, "ph-lg", "eager")}
@@ -905,24 +949,24 @@ function detailSheet(id){
         ${isToday ? `<span class="done-badge">✓ 今天噴的就是它</span>` : `<button class="btn primary" data-act="wear" data-id="${esc(id)}">${S.wears[TODAY] ? "改成今天噴這支" : "今天噴這支"}</button>`}
         <button class="btn ghost" data-act="edit" data-id="${esc(id)}">編輯</button>
       </div>
-      <div><div class="label">喜好</div><div class="stars">${[1,2,3,4,5].map(n => `<button class="${num(p.rating,0)>=n?"on":""}" data-act="rate" data-id="${esc(id)}" data-v="${n}" aria-label="${n} 星">★</button>`).join("")}</div></div>
+      <div><div class="label">我的評分</div><div class="stars">${[1,2,3,4,5].map(n => `<button class="${num(p.rating,0)>=n?"on":""}" data-act="rate" data-id="${esc(id)}" data-v="${n}" aria-pressed="${p.rating===n}" aria-label="${n} 星">★</button>`).join("")}</div></div>
       <div><div class="label" style="margin-bottom:8px">剩量</div><div class="chips">${Object.entries(REMAIN).map(([k,v]) => `<button class="chip" data-act="remain" data-id="${esc(id)}" data-v="${k}" aria-pressed="${p.remaining===k}">${v}</button>`).join("")}</div></div>
     </div>
+    ${noteList(p.notes)}
     <details class="disclosure detail-profile">
-      <summary>香調與使用資訊</summary>
+      <summary>香調圖表與使用資訊</summary>
       <div class="profile-body">
         ${(p.accords && p.accords.length) ? `<div><div class="label">主要香調</div><div class="accbars">${p.accords.map(([k,v]) =>
             `<div class="ab"><span>${esc(accName(k))}</span><span class="at"><i style="width:${num(v,0)}%;background:${accColor(k)}"></i></span></div>`).join("")}</div></div>` : ""}
         ${p.seasons ? `<div><div class="label">網友票選適用時機</div><div class="seabars">${Object.entries(SEASON).map(([k,l]) =>
             `<div class="sb"><span class="st"><i style="height:${num(p.seasons[k],0)}%"></i></span><span>${l}</span></div>`).join("")}</div></div>` : ""}
         <dl class="kv">
-          <dt>香調</dt><dd>${esc(p.notes || "—")}</dd>
           ${Number.isFinite(p.tMin) && Number.isFinite(p.tMax) ? `<dt>舒適溫度</dt><dd class="mono">${p.tMin}–${p.tMax}°C</dd>` : ""}
           <dt>場合</dt><dd>${(p.occ||[]).map(o => esc(OCC[o]||o)).join("、") || "—"}</dd>
           <dt>擴散 / 持久</dt><dd><span class="mono">${num(p.strength,"未評估")} / ${num(p.longevity,"未評估")}</span>${p.votes ? `<span class="small muted">（依網友投票換算，滿分 5）</span>` : ""}</dd>
           <dt>使用</dt><dd>${count[id]||0} 次 · 上次 ${esc(sinceText(last[id]))}</dd>
           ${p.memo ? `<dt>備註</dt><dd>${esc(p.memo)}</dd>` : ""}
-          ${/^https:\/\/www\.fragrantica\.asia\//.test(p.source || "") ? `<dt>資料來源</dt><dd><a href="${esc(p.source)}" target="_blank" rel="noopener">Fragrantica 頁面</a></dd>` : ""}
+          ${fragranticaId(p.source) ? `<dt>資料來源</dt><dd><a href="${esc(p.source)}" target="_blank" rel="noopener">Fragrantica 頁面</a></dd>` : ""}
         </dl>
       </div>
     </details>
@@ -933,53 +977,97 @@ function detailSheet(id){
     </div>`);
 }
 
+function fragranticaSearch(brand, name){
+  const query = [brand,name].map(value => String(value ?? "").trim()).filter(Boolean).join(" ");
+  return "https://www.fragrantica.com/search/#q=" + encodeURIComponent(query);
+}
+
 function editSheet(id){
-  const p = id ? byId(id) : {id:"", brand:"", name:"", conc:"EDP", families:[], accords:[], notes:"",
-    seasons:{spring:80,summer:80,fall:80,winter:80,day:80,night:60}, occ:[], strength:3, longevity:3, rating:3, remaining:null, memo:"", source:""};
+  const p = id ? byId(id) : {brand:"", name:"", conc:"", families:[], notes:"", occ:[], rating:null, remaining:null};
   if (!p) return;
   const tog = (act, map, sel) => Object.entries(map).map(([k,v]) => `<button type="button" class="chip" data-act="${act}" data-v="${k}" aria-pressed="${(sel||[]).includes(k)}">${v}</button>`).join("");
   const accSel = (p.accords && p.accords.length) ? p.accords.map(a => a[0]) : (p.families || []);
   const seaSel = p.seasons ? Object.keys(SEASON).filter(k => num(p.seasons[k],0) >= 70) : [];
+  const concentrations = [...new Set(["", "EDT", "EDP", "Parfum", "Extrait", "EDC", p.conc || ""])];
+  const notes = splitNotes(p.notes);
   openSheet(`<h3>${id ? "編輯香水" : "新增香水"}</h3>
-    <form id="pform" data-id="${esc(p.id)}" style="display:grid;gap:12px">
+    <form id="pform" data-id="${esc(p.id)}" class="perfume-form">
       <div class="field"><label for="f-brand">品牌</label><input id="f-brand" value="${esc(p.brand)}" required></div>
-      <div class="field"><label for="f-name">名稱</label><input id="f-name" value="${esc(p.name)}" required></div>
-      <div class="field"><label for="f-conc">濃度</label><input id="f-conc" value="${esc(p.conc)}" placeholder="EDT / EDP / Parfum"></div>
-      <div class="field"><span class="label">主要香調（比例最高的決定顏色）</span><div class="chips" id="f-fam">${tog("ffam", FAM_EDIT, accSel)}</div></div>
-      <div class="field"><label for="f-notes">香調描述（首調｜中調｜基調）</label><textarea id="f-notes" rows="2">${esc(p.notes)}</textarea></div>
-      <div class="field"><span class="label">適合季節與時段</span><div class="chips" id="f-sea">${tog("fsea", SEASON, seaSel)}</div></div>
-      <div class="field"><span class="label">適合場合</span><div class="chips" id="f-occ">${tog("focc", OCC, p.occ)}</div></div>
-      <div class="grid2">
-        <div class="field"><label for="f-str">擴散度 1–5</label><input id="f-str" type="number" step="0.5" min="1" max="5" value="${esc(p.strength)}"></div>
-        <div class="field"><label for="f-lon">持久度 1–5</label><input id="f-lon" type="number" step="0.5" min="1" max="5" value="${esc(p.longevity)}"></div>
-      </div>
-      <div class="field"><label for="f-memo">備註</label><input id="f-memo" value="${esc(p.memo)}"></div>
-      <div class="field"><label for="f-src">Fragrantica 網址</label><input id="f-src" type="url" inputmode="url" value="${esc(p.source || "")}" placeholder="https://www.fragrantica.asia/perfume/..."></div>
-      <div class="actions"><button class="btn primary" type="submit">儲存</button>${id ? `<button class="btn ghost danger" type="button" data-act="del" data-id="${esc(id)}">刪除</button>` : ""}</div>
+      <div class="field"><label for="f-name">香水名稱</label><input id="f-name" value="${esc(p.name)}" required></div>
+      <div class="field"><label for="f-conc">濃度（選填）</label><select id="f-conc">
+        ${concentrations.map(c => `<option value="${esc(c)}"${c===(p.conc || "") ? " selected" : ""}>${esc(c || "未設定")}</option>`).join("")}
+      </select></div>
+      <details class="disclosure form-options">
+        <summary>香調與 Fragrantica</summary>
+        <div class="form-section">
+          <a class="lookup-link" id="f-lookup" href="${esc(fragranticaSearch(p.brand,p.name))}" target="_blank" rel="noopener">搜尋 Fragrantica ↗</a>
+          <div class="field"><label for="f-src">Fragrantica 香水頁網址</label>
+            <input id="f-src" type="url" inputmode="url" value="${esc(p.source)}" placeholder="https://www.fragrantica.com/perfume/…">
+            <span class="small muted">貼上香水頁網址，就會顯示對應瓶照。</span>
+          </div>
+          <div class="field"><label for="f-score">Fragrantica 分數（滿分 5）</label>
+            <input id="f-score" type="number" min="1" max="5" step="0.01" inputmode="decimal" value="${esc(p.fragranticaRating)}" placeholder="${esc(Store.bundle?.ratings?.[fragranticaId(p.source)] || "選填")}">
+          </div>
+          ${NOTE_FIELDS.map(([key,label]) => `<div class="field"><label for="f-note-${key}">${label}</label>
+            <textarea id="f-note-${key}" rows="1">${esc(notes[key])}</textarea></div>`).join("")}
+          <div class="field"><span class="label">香調分類</span><div class="chips" id="f-fam">${tog("ffam", FAM_EDIT, accSel)}</div></div>
+        </div>
+      </details>
+      <details class="disclosure form-options">
+        <summary>推薦偏好與備註</summary>
+        <div class="form-section">
+          <div class="field"><span class="label">適合季節與時段</span><div class="chips" id="f-sea">${tog("fsea", SEASON, seaSel)}</div></div>
+          <div class="field"><span class="label">適合場合</span><div class="chips" id="f-occ">${tog("focc", OCC, p.occ)}</div></div>
+          <div class="grid2">
+            <div class="field"><label for="f-str">擴散度 1–5</label><input id="f-str" type="number" step="0.5" min="1" max="5" value="${esc(p.strength)}"></div>
+            <div class="field"><label for="f-lon">持久度 1–5</label><input id="f-lon" type="number" step="0.5" min="1" max="5" value="${esc(p.longevity)}"></div>
+          </div>
+          <div class="field"><label for="f-memo">備註</label><textarea id="f-memo" rows="2">${esc(p.memo)}</textarea></div>
+          ${id ? `<button class="btn ghost danger" type="button" data-act="del" data-id="${esc(id)}">刪除香水</button>` : ""}
+        </div>
+      </details>
+      <div class="actions form-actions"><button class="btn primary" type="submit">${id ? "儲存" : "新增香水"}</button></div>
     </form>`);
-  $("#pform").addEventListener("submit", e => { e.preventDefault(); submitForm(p); });
+  const form = $("#pform");
+  form.addEventListener("input", e => {
+    if (e.target.id === "f-brand" || e.target.id === "f-name") {
+      $("#f-lookup").href = fragranticaSearch($("#f-brand").value,$("#f-name").value);
+    }
+  });
+  form.addEventListener("invalid", e => {
+    const group = e.target.closest("details");
+    if (group) group.open = true;
+  }, true);
+  form.addEventListener("submit", e => { e.preventDefault(); submitForm(p); });
 }
 async function submitForm(orig){
   const v = id => $(id).value.trim();
-  const n = (id, d) => { const x = parseFloat($(id).value); return isFinite(x) ? x : d; };
+  const n = id => { const value = $(id).valueAsNumber; return Number.isFinite(value) ? value : null; };
   const picked = sel => [...document.querySelectorAll(sel+" .chip[aria-pressed='true']")].map(b => b.dataset.v);
-  if (!v("#f-brand") || !v("#f-name")) { toast("請填品牌和名稱"); return; }
+  const brand = v("#f-brand"), name = v("#f-name");
+  if (!brand || !name) { toast("請填品牌和名稱"); return; }
   const id = orig.id || ("p" + Date.now().toString(36));
-  // 香調：保留原本 Fragrantica 的比例，新勾的給 60
-  const oldPct = Object.fromEntries((orig.accords || []).map(a => a));
-  const accords = picked("#f-fam").map(k => [k, num(oldPct[k], 60)]).sort((a,b) => b[1] - a[1]);
-  // 季節：勾選狀態沒變就保留原本的投票數字
+  const selected = picked("#f-fam");
+  const oldAccords = orig.accords || [];
+  const keptAccords = oldAccords.filter(([key]) => selected.includes(key));
+  const weightedKeys = oldAccords.map(([key]) => key);
+  const families = oldAccords.length
+    ? [...keptAccords.map(([key]) => key), ...selected.filter(key => !weightedKeys.includes(key))].slice(0,3)
+    : selected;
+  // 季節勾選狀態沒變就保留原本的投票數字。
   const seaOn = picked("#f-sea"), os = orig.seasons || {};
   const seasons = orig.seasons || seaOn.length ? Object.fromEntries(Object.keys(SEASON).map(k => {
     const was = num(os[k], 50), on = seaOn.includes(k);
     return [k, on ? (was >= 70 ? was : 85) : (was < 70 ? was : 40)];
   })) : undefined;
-  const p = Object.assign({}, orig, {id, brand:v("#f-brand"), name:v("#f-name"), conc:v("#f-conc"),
-    accords, families: accords.slice(0,3).map(a => a[0]), seasons, notes:v("#f-notes"),
-    occ:picked("#f-occ"), strength:n("#f-str",null), longevity:n("#f-lon",null),
+  const noteEntries = NOTE_FIELDS.map(([key,label]) => [label,v("#f-note-"+key)]).filter(([,value]) => value);
+  const notes = noteEntries.length === 1 && noteEntries[0][0] === "整體香調" ? noteEntries[0][1] :
+    noteEntries.map(([label,value]) => label + "：" + value).join("｜");
+  const p = Object.assign({}, orig, {id, brand, name, conc:v("#f-conc"), notes,
+    accords:keptAccords, families, seasons, occ:picked("#f-occ"),
+    strength:n("#f-str"), longevity:n("#f-lon"), fragranticaRating:n("#f-score"),
     memo:v("#f-memo"), source:v("#f-src")});
-  delete p.tMin; delete p.tMax;
-  await act(() => Store.savePerfume(p, true), "已儲存");
+  await act(() => Store.savePerfume(p, true), orig.id ? "已儲存" : "已新增香水");
   detailSheet(id);
 }
 
