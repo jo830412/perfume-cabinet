@@ -28,13 +28,17 @@
   --font-body:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
   --font-data:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
   --r:14px; --nav-h:64px;
+  /* 木頭層架 */
+  --cabinet-back:#E9E1D6; --cabinet-frame:#8B5E3C; --wood:#A8744A; --wood-hi:#C99A6B; --wood-lo:#7A4F2E; --shelf-shadow:rgba(60,35,15,.35);
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#10121A; --surface:#1A1D28; --surface-2:#252937; --ink:#E8EAF2; --muted:#9AA0B5; --line:#2F3446;
-  --accent:#93ABE2; --accent-ink:#0E1322; --accent-soft:#25304A; --amber:#E2A65C; --danger:#E07C7C; color-scheme:dark}}
+  --accent:#93ABE2; --accent-ink:#0E1322; --accent-soft:#25304A; --amber:#E2A65C; --danger:#E07C7C; color-scheme:dark;
+  --cabinet-back:#241E1A; --cabinet-frame:#5A3B24; --wood:#7E5534; --wood-hi:#A1764F; --wood-lo:#553620; --shelf-shadow:rgba(0,0,0,.55)}}
 :root[data-theme="dark"]{
   --bg:#10121A; --surface:#1A1D28; --surface-2:#252937; --ink:#E8EAF2; --muted:#9AA0B5; --line:#2F3446;
-  --accent:#93ABE2; --accent-ink:#0E1322; --accent-soft:#25304A; --amber:#E2A65C; --danger:#E07C7C; color-scheme:dark}
+  --accent:#93ABE2; --accent-ink:#0E1322; --accent-soft:#25304A; --amber:#E2A65C; --danger:#E07C7C; color-scheme:dark;
+  --cabinet-back:#241E1A; --cabinet-frame:#5A3B24; --wood:#7E5534; --wood-hi:#A1764F; --wood-lo:#553620; --shelf-shadow:rgba(0,0,0,.55)}
 
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -115,15 +119,7 @@ h2{font-size:13px;font-weight:500;color:var(--muted);letter-spacing:.08em;margin
 .famscroll{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
 .famscroll .chip{white-space:nowrap;flex:none;min-height:44px}
 .shelf-toolbar .btn{flex:none;padding-inline:12px;min-height:44px}
-.collection-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.collection-item{display:flex;flex-direction:column;align-items:stretch;min-width:0;gap:6px;padding:12px;border:0;border-radius:var(--r);background:var(--surface);text-align:left}
-.collection-item .ph{align-self:center}
-.collection-item .n{font-family:var(--font-display);line-height:1.25;overflow-wrap:anywhere}
-.collection-item .s{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
-.collection-item.is-today{box-shadow:inset 0 0 0 1.5px var(--accent)}
-.collection-item .recent{margin-top:auto;font-size:12px;color:var(--muted)}
-.collection-item.is-today .recent{color:var(--accent)}
-.collection-item:active,.alt:active{background:var(--surface-2)}
+.alt:active{background:var(--surface-2)}
 
 /* log */
 .cal-head{display:flex;justify-content:space-between;align-items:center}
@@ -238,6 +234,54 @@ html,body{margin:0}
 .top-r{display:flex;align-items:center;gap:8px}
 .sync-chip{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 10px;font-size:12px;min-height:30px;color:var(--muted)}
 .sync-chip[data-state="need"]{border-color:var(--accent);color:var(--accent);font-weight:500}
+
+/* 香水櫃：木頭層架，一排 3～4 罐 */
+.cabinet{background:var(--cabinet-back);border:8px solid var(--cabinet-frame);border-radius:14px;padding:4px 0 6px;
+  box-shadow:inset 0 10px 18px -10px var(--shelf-shadow), 0 2px 6px var(--shelf-shadow)}
+.shelf-row{padding:14px 0 10px}
+.shelf-bottles,.shelf-labels{display:grid;grid-template-columns:repeat(var(--cols),minmax(0,1fr));gap:0 8px;padding:0 10px}
+.shelf-bottles{align-items:end}
+.bottle{position:relative;display:flex;justify-content:center;align-items:flex-end;min-width:0;height:118px;padding:0;border:0;background:transparent}
+.bottle .ph{background:transparent}
+.bottle .ph img{object-position:center bottom;filter:drop-shadow(0 4px 3px var(--shelf-shadow))}
+.bottle.is-empty{opacity:.45}
+.today-tag{position:absolute;top:0;right:2px;z-index:1;font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;background:var(--accent);color:var(--accent-ink)}
+.ph-shelf{width:100%;max-width:84px;height:112px}
+.plank{height:14px;margin:0 -2px;border-radius:2px;
+  background:repeating-linear-gradient(92deg,transparent 0 23px,rgba(0,0,0,.07) 23px 25px,transparent 25px 61px,rgba(255,255,255,.06) 61px 62px),
+    linear-gradient(180deg,var(--wood-hi) 0 3px,var(--wood) 3px 10px,var(--wood-lo) 10px);
+  box-shadow:0 7px 9px -4px var(--shelf-shadow)}
+.shelf-labels{margin-top:8px;align-items:start}
+.bottle-label{display:grid;gap:2px;min-width:0;padding:0;border:0;background:transparent;text-align:center;justify-items:center}
+.bottle-label .n{font-family:var(--font-display);font-size:13px;line-height:1.2;color:var(--ink);overflow-wrap:anywhere;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.bottle-label .s{font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.bottle-label .recent{font-size:10.5px;color:var(--muted)}
+.mini-score{color:var(--amber);font-weight:500;font-variant-numeric:tabular-nums}
+
+/* 今天的多筆紀錄 */
+.wear-timeline{list-style:none;margin:12px 0 0;padding:10px 12px;display:grid;gap:4px;background:var(--bg);border-radius:10px;font-size:13px}
+.wear-timeline li{display:flex;gap:10px;align-items:baseline}
+.wear-timeline li .mono{color:var(--muted);min-width:3.2em}
+.refill{font-size:11px;padding:0 7px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}
+.day-entries{display:grid;gap:8px}
+.entry-actions{display:flex;gap:6px;flex:none}
+.entry-actions .chip{min-height:40px;padding:6px 10px}
+.danger-chip{color:var(--danger)}
+
+/* 日曆瓶身小圖 */
+.cal-bottle{position:relative;display:block}
+.ph-cal{width:24px;height:32px;border-radius:4px}
+.cal-more{position:absolute;right:-9px;bottom:-3px;font-size:9px;font-weight:700;padding:0 3px;border-radius:6px;background:var(--accent);color:var(--accent-ink);font-family:var(--font-data)}
+.day{min-height:62px}
+
+/* 新增香水：網址預覽、類型 */
+.src-row{display:flex;gap:8px;align-items:center}
+.src-row input{flex:1}
+.missing-details{display:grid;gap:8px;padding:12px;border-radius:12px;border:1px dashed var(--line)}
+.missing-details .chip{justify-self:start;min-height:40px}
+.own-tag{justify-self:start;font-size:12px;font-weight:500;padding:3px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}
+.similar{display:flex;gap:10px;align-items:center;width:100%;padding:10px 12px;border:0;border-radius:12px;background:var(--bg);text-align:left}
 </style>
 </head>
 <body>
@@ -296,7 +340,10 @@ const HEAVY = ["amber","oud","leather","smoky","sweet","vanilla","balsamic","ani
 const AVG_HIGH = [19,20,22,26,29,32,34,33,31,28,25,21]; // 台北各月平均高溫
 const WEEK = "日一二三四五六";
 const VIEWS = ["today","shelf","log","prefs"];
-const STOCK_FILTERS = {active:"現有",empty:"已用完",all:"全部"};
+const STOCK_FILTERS = {active:"現有",empty:"已用完",all:"全部",wish:"願望清單",tried:"試香紀錄"};
+// own：沒有值 = 我有的；"wish" = 想買；"tried" = 試香過（後兩種不進推薦和使用紀錄）
+const OWN_TYPES = {"":"我有的",wish:"想買",tried:"試香過"};
+const isOwned = p => !p.own;
 const LKEY = "perfume-cabinet-v1";
 
 const $ = s => document.querySelector(s);
@@ -312,7 +359,7 @@ function jitter(str){ let h = 2166136261; for (const c of str) { h ^= c.charCode
 
 const TODAY = ymd(new Date());
 const S = {
-  mode:"loading", perfumes:[], wears:{},
+  mode:"loading", perfumes:[], wearList:[],
   view:"today", q:"", fam:null, stock:"active", offset:0,
   calMonth: TODAY.slice(0,7), ctx:null
 };
@@ -361,7 +408,9 @@ function applyWeather(){
 /* ---------- 資料：存在手機（localStorage），可同步到 Google 雲端硬碟 ---------- */
 // Google Cloud Console →「API 和服務」→「憑證」→ OAuth 用戶端 ID（網頁應用程式）。這個 ID 是公開的，不是密碼。
 const GOOGLE_CLIENT_ID = "288072368244-huo1rnfas2s4rovnab1cs91hc6n6e3lt.apps.googleusercontent.com";
-const USER_FIELDS = ["rating","remaining","remainingBeforeEmpty","memo","row","col","occ","photo","fragranticaRating"];
+const USER_FIELDS = ["rating","remaining","remainingBeforeEmpty","memo","row","col","occ","photo","fragranticaRating","own","triedOn"];
+// Fragrantica 完整資料（網站 perfumes.json 的 details，以 Fragrantica 網址 ID 對應）會補進這些欄位
+const DETAIL_FIELDS = ["accords","families","seasons","strength","longevity","votes","notes"];
 const Store = {
   bundle: null,
   data: {perfumes:{}, wears:{}},
@@ -380,9 +429,22 @@ const Store = {
     const d = {perfumes:{}, wears:{}};
     const ps = Array.isArray(x.perfumes) ? x.perfumes : Object.values(x.perfumes || {});
     ps.forEach(p => { if (p && p.id) d.perfumes[p.id] = Object.assign({t:0}, p); });
-    const ws = Array.isArray(x.wears) ? x.wears : Object.values(x.wears || {});
-    ws.forEach(w => { if (w && w.date) d.wears[w.date] = Object.assign({t:0}, w); });
+    // 使用紀錄一天可以有多筆；舊資料一天一筆、以日期當代號，照樣沿用
+    const ws = Array.isArray(x.wears) ? x.wears : Object.entries(x.wears || {}).map(([key,w]) => Object.assign({id:key}, w));
+    ws.forEach(w => { if (w && w.date) { const id = w.id || w.date; d.wears[id] = Object.assign({t:0}, w, {id}); } });
     return d;
+  },
+  // 網站 details 有這支香水的完整資料、而且是新的一版（請 Claude 補資料時才會更新），就補進去
+  applyDetails(b){
+    const details = b?.details || {};
+    for (const p of Object.values(this.data.perfumes)) {
+      const fid = !p.del && fragranticaId(p.source), det = fid && details[fid];
+      if (!det || p.detailsVer === det.ver) continue;
+      for (const key of DETAIL_FIELDS) if (det[key] != null) p[key] = det[key];
+      if (Number.isFinite(det.rating)) p.fragranticaRating = det.rating;
+      p.detailsVer = det.ver;
+      p.t = Date.now();
+    }
   },
   // 更新網站附的香水資料並保留個人欄位；跳過已刪除的香水和無須更正的自訂資料。
   mergeBundle(b){
@@ -402,6 +464,7 @@ const Store = {
       this.data.perfumes[p.id] = Object.assign({}, p, keep, {b:ver, t: cur ? cur.t : 0});
       if (cur && !cur.b) delete this.data.perfumes[p.id].b;
     }
+    this.applyDetails(b);
   },
   // 每筆資料各自比修改時間，新的贏
   merge(remote){
@@ -417,15 +480,19 @@ const Store = {
     lsSet(LKEY, this.data);
     const D = this.data;
     S.perfumes = Object.values(D.perfumes).filter(p => !p.del);
-    S.wears = Object.fromEntries(Object.entries(D.wears).filter(([,w]) => !w.del && w.perfumeId));
+    S.wearList = Object.values(D.wears).filter(w => !w.del && w.perfumeId)
+      .sort((a,b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")) || num(a.t,0) - num(b.t,0));
     render();
     if (sync) Sync.schedule();
   },
   async savePerfume(p, edited){ const r = Object.assign({}, p, {t:Date.now()}); if (edited) delete r.b; this.data.perfumes[p.id] = r; this.save(); },
   async deletePerfume(id){ this.data.perfumes[id] = {id, del:true, t:Date.now()}; this.save(); },
-  async saveWear(date, w){ this.data.wears[date] = Object.assign({}, w, {date, t:Date.now()}); this.save(); },
-  async deleteWear(date){ this.data.wears[date] = {date, del:true, t:Date.now()}; this.save(); }
+  async addWear(w){ const id = `${w.date}-${Date.now().toString(36)}`; this.data.wears[id] = Object.assign({}, w, {id, t:Date.now()}); this.save(); return id; },
+  async updateWear(id, patch){ const cur = this.data.wears[id]; if (!cur) return; this.data.wears[id] = Object.assign({}, cur, patch, {id, t:Date.now()}); this.save(); },
+  async deleteWear(id){ const cur = this.data.wears[id]; this.data.wears[id] = {id, date:cur?.date, del:true, t:Date.now()}; this.save(); }
 };
+const wearsOn = date => S.wearList.filter(w => w.date === date);
+const nowTime = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 
 /* ---------- 天氣：用手機定位找最近的鄉鎮市區，抓中央氣象署的逐時預報 ---------- */
 // 中央氣象署開放資料平臺的會員授權碼（免費，公開在網頁上沒有費用風險）
@@ -628,12 +695,14 @@ async function act(fn, okMsg){
 }
 
 /* ---------- recommendation ---------- */
+// last：每支最後一次噴的日期；count：噴過幾天（同一天補香只算一天）
 function lastWorn(before){
-  const m = {}, c = {};
-  for (const [date, w] of Object.entries(S.wears)) {
+  const m = {}, c = {}, seen = new Set();
+  for (const {date, perfumeId} of S.wearList) {
     if (before && date >= before) continue;
-    c[w.perfumeId] = (c[w.perfumeId] || 0) + 1;
-    if (!m[w.perfumeId] || date > m[w.perfumeId]) m[w.perfumeId] = date;
+    const key = perfumeId + "|" + date;
+    if (!seen.has(key)) { seen.add(key); c[perfumeId] = (c[perfumeId] || 0) + 1; }
+    if (!m[perfumeId] || date > m[perfumeId]) m[perfumeId] = date;
   }
   return {last:m, count:c};
 }
@@ -651,7 +720,7 @@ function recommend(today, ctx){
   const t = ctx.temp, night = isNightOcc(ctx.occ);
   const weights = Object.entries(SEASON_CENTER).map(([key,center]) => [key, Math.exp(-(((t-center)/5) ** 2))]);
   const totalWeight = weights.reduce((sum,[,weight]) => sum + weight,0);
-  return S.perfumes.filter(p => p.remaining !== "empty").map(p => {
+  return S.perfumes.filter(p => isOwned(p) && p.remaining !== "empty").map(p => {
     let s = 0; const why = [], tips = [];
     const st = num(p.strength, 3);
     const sea = p.seasons;
@@ -697,6 +766,30 @@ function recommend(today, ctx){
   }).sort((a,b) => b.score - a.score);
 }
 
+// 「其他選擇」的理由：寫出它和主推薦哪裡不一樣，三支盡量不重複
+function altReasons(main, alts){
+  const used = new Set();
+  const mp = profile(main.p) || {fresh:0, heavy:0}, mf = main.p.families || [];
+  return alts.map(r => {
+    const p = r.p, pp = profile(p) || {fresh:0, heavy:0}, options = [];
+    if (pp.fresh - mp.fresh >= .2) options.push("比主推薦更清爽");
+    if (pp.heavy - mp.heavy >= .2) options.push("比主推薦更溫暖厚重");
+    const fam = (p.families || []).find(f => !mf.includes(f));
+    if (fam) options.push(`換個口味：${accName(fam)}調`);
+    const dl = num(p.longevity, NaN) - num(main.p.longevity, NaN);
+    if (dl >= 1) options.push("留香比較久");
+    if (dl <= -1) options.push("比較輕盈，不會留太久");
+    const ds = num(p.strength, NaN) - num(main.p.strength, NaN);
+    if (ds >= 1) options.push("擴散比較強，存在感高");
+    if (ds <= -1) options.push("比較低調，適合近距離");
+    if (num(p.rating,0) >= 4 && num(p.rating,0) > num(main.p.rating,0)) options.push("你評分比較高的愛用款");
+    options.push(...r.why);
+    const pick = options.find(o => !used.has(o)) || r.why[0] || p.brand || "";
+    used.add(pick);
+    return pick;
+  });
+}
+
 /* ---------- rendering helpers ---------- */
 const famChips = p => (p.families || []).map(f => `<span class="fam" style="--c:${accColor(f)}"><i></i>${esc(accName(f))}</span>`).join(" ");
 // 香水圖片：自己拍的優先，否則用 Fragrantica 的瓶身照
@@ -715,6 +808,11 @@ function communityScore(p){
   const score = num(p.fragranticaRating, Store.bundle?.ratings?.[fragranticaId(p.source)]);
   return Number.isFinite(score) && score >= 1 && score <= 5
     ? `<span class="community-score">Fragrantica <strong>${score.toFixed(2)}</strong><span>/ 5</span></span>` : "";
+}
+// 層架標籤用的精簡分數：★ 4.23 ·
+function shelfScore(p){
+  const score = num(p.fragranticaRating, Store.bundle?.ratings?.[fragranticaId(p.source)]);
+  return Number.isFinite(score) && score >= 1 && score <= 5 ? `<b class="mini-score" title="Fragrantica 分數">★ ${score.toFixed(2)}</b> · ` : "";
 }
 const NOTE_FIELDS = [["top","前調"],["heart","中調"],["base","後調"],["overall","整體香調"]];
 const NOTE_KEYS = {首調:"top",前調:"top",中調:"heart",基調:"base",尾調:"base",後調:"base",整體香調:"overall"};
@@ -809,7 +907,9 @@ function renderToday(){
   if (!S.perfumes.length) { el.innerHTML = html + emptyState(); return; }
 
   const recs = recommend(TODAY, c);
-  const worn = S.wears[TODAY] && byId(S.wears[TODAY].perfumeId);
+  const todayWears = wearsOn(TODAY);
+  const latest = todayWears[todayWears.length - 1];
+  const worn = latest && byId(latest.perfumeId);
   if (!worn && !recs.length) {
     el.innerHTML = html + '<div class="card empty-state">目前沒有可推薦的香水。到香水櫃更新剩量或新增香水。</div>';
     return;
@@ -818,9 +918,16 @@ function renderToday(){
   const ordered = worn ? recs : recs.slice(offset).concat(recs.slice(0,offset));
   const main = worn ? {p:worn, why:[], tips:[]} : ordered[0];
   const p = main.p, alts = ordered.filter(r => r.p.id !== p.id).slice(0,3);
-  const last = lastWorn(worn ? TODAY : null).last;
+  const altWhy = altReasons(main, alts);
+  // 已記錄時顯示「今天以前」最後一次噴的時間，才不會和「已記錄」互相矛盾
+  const prev = lastWorn(worn ? TODAY : null).last[p.id];
+  const prevText = prev ? sinceText(prev) : worn ? "第一次噴" : "未噴過";
+  const timeline = todayWears.length ? `<ol class="wear-timeline" aria-label="今天的使用紀錄">${todayWears.map((w,i) => {
+    const wp = byId(w.perfumeId), refill = todayWears.slice(0,i).some(x => x.perfumeId === w.perfumeId);
+    return `<li><span class="mono">${esc(w.time || "—")}</span><span>${esc(wp?.name || "已移除的香水")}</span>${refill ? '<span class="refill">補香</span>' : ""}</li>`;
+  }).join("")}</ol>` : "";
   html += `<article class="card pick" style="--c:${famColor(p)}">
-    <div class="eyebrow">${worn ? "今天噴的是" : "今日推薦"}</div>
+    <div class="eyebrow">${worn ? (todayWears.length > 1 ? `今天記錄了 ${todayWears.length} 次 · 最近一次` : "今天噴的是") : "今日推薦"}</div>
     <div class="pick-top">
       <div style="min-width:0">
         <div class="brand">${esc([p.brand, p.conc].filter(Boolean).join(" · "))}</div>
@@ -830,22 +937,25 @@ function renderToday(){
       ${photo(p, "ph-lg", "eager")}
     </div>
     <div class="actions today-actions">
-      ${worn ? `<span class="done-badge">✓ 已記錄${p.remaining === "empty" ? " · 已用完" : ""}</span><button class="btn ghost" data-act="unwear" style="margin-left:auto">取消紀錄</button>`
+      ${worn ? `<span class="done-badge">✓ 已記錄${p.remaining === "empty" ? " · 已用完" : ""}</span>
+               <button class="btn primary" data-act="wear" data-id="${esc(p.id)}">補香</button>
+               <button class="btn ghost" data-act="unwear">取消最後一筆</button>`
              : `<button class="btn primary" data-act="wear" data-id="${esc(p.id)}">今天噴這支</button>${alts.length ? '<button class="btn ghost" data-act="shuffle">換一支</button>' : ""}<button class="btn ghost" data-act="open" data-id="${esc(p.id)}">詳情</button>`}
     </div>
     ${worn ? `<div class="stock-row" style="margin-top:10px"><button class="btn ghost" data-act="open" data-id="${esc(p.id)}">詳情</button>${stockButton(p,"today")}</div>` : ""}
+    ${timeline}
     ${main.why.length ? `<ul class="why">${main.why.map(w => `<li>${esc(w)}</li>`).join("")}</ul>` : ""}
     ${main.tips.length ? `<div class="tips">${main.tips.map(esc).join("・")}</div>` : ""}
     <div class="facts">
       <div><span class="label">擴散度</span>${meter(p.strength)}</div>
       <div><span class="label">持久度</span>${meter(p.longevity)}</div>
-      <div><span class="label">上次噴</span><b>${esc(sinceText(last[p.id]))}</b></div>
+      <div><span class="label">${worn ? "前一次噴" : "上次噴"}</span><b>${esc(prevText)}</b></div>
     </div>
   </article>`;
-  if (alts.length) html += `<h2>${worn ? "想換的話" : "其他選擇"}</h2>
-  <div class="alts">${alts.map(r => `<button class="alt" data-act="open" data-id="${esc(r.p.id)}" style="--c:${famColor(r.p)}">
+  if (alts.length) html += `<h2>${worn ? "想換一支的話" : "其他選擇"}</h2>
+  <div class="alts">${alts.map((r,i) => `<button class="alt" data-act="open" data-id="${esc(r.p.id)}" style="--c:${famColor(r.p)}">
       <span class="bar"></span>${photo(r.p, "ph-sm")}
-      <span style="min-width:0"><span class="n">${esc(r.p.name)}</span><br><span class="s">${esc(r.why[0] || r.p.brand || "")}</span></span>
+      <span style="min-width:0"><span class="n">${esc(r.p.name)}</span><br><span class="s">${esc(altWhy[i])}</span></span>
     </button>`).join("")}</div>`;
   el.innerHTML = html;
 }
@@ -873,28 +983,45 @@ function renderShelfResults(){
   const q = S.q.trim();
   const list = S.perfumes.filter(p => {
     const families = p.families || [];
-    const inStock = S.stock === "all" || (p.remaining === "empty") === (S.stock === "empty");
-    return inStock && (!S.fam || families.includes(S.fam)) &&
+    const inGroup = S.stock === "wish" || S.stock === "tried" ? p.own === S.stock :
+      isOwned(p) && (S.stock === "all" || (p.remaining === "empty") === (S.stock === "empty"));
+    return inGroup && (!S.fam || families.includes(S.fam)) &&
       matchesCatalog(q,...catalogSearchFields(p),p.notes,p.memo,...families.map(accName));
   }).sort(comparePerfumes);
   if (!list.length) {
-    const message = q || S.fam ? "沒有符合的香水" :
-      (S.stock === "empty" ? "目前沒有已用完的香水" : "目前沒有現有香水");
+    const message = q || S.fam ? "沒有符合的香水" : {
+      empty:"目前沒有已用完的香水", wish:"願望清單是空的。按「新增香水」，類型選「想買」。",
+      tried:"還沒有試香紀錄。按「新增香水」，類型選「試香過」。"}[S.stock] || "目前沒有現有香水";
     results.innerHTML = `<div class="card muted empty-state" role="status">${message}</div>`;
     return;
   }
-  const {last} = lastWorn(null), todayId = S.wears[TODAY]?.perfumeId;
-  results.innerHTML = `<div class="collection-grid">${list.map(p => {
-    const worn = todayId === p.id;
-    return `<button class="collection-item${worn ? " is-today" : ""}" data-act="open" data-id="${esc(p.id)}">
-      ${photo(p, "ph-card")}
-      <span class="n">${esc(p.name)}</span>
-      <span class="s">${esc([p.brand,p.conc].filter(Boolean).join(" · "))}</span>
-      ${communityScore(p)}
-      <span class="recent">${p.remaining === "empty" ? "已用完" : worn ? "今天已噴" : esc(sinceText(last[p.id]))}</span>
-    </button>`;
-  }).join("")}</div>`;
+  const {last} = lastWorn(null), todayIds = new Set(wearsOn(TODAY).map(w => w.perfumeId));
+  // 依畫面寬度一排放 3 或 4 罐，每排下面墊一塊木板
+  const cols = shelfCols();
+  const rows = [];
+  for (let i = 0; i < list.length; i += cols) rows.push(list.slice(i, i + cols));
+  const status = p => p.own === "wish" ? "想買" :
+    p.own === "tried" ? (p.triedOn ? `試香 ${Number(p.triedOn.slice(5,7))}/${Number(p.triedOn.slice(8,10))}` : "試香過") :
+    p.remaining === "empty" ? "已用完" : todayIds.has(p.id) ? "今天" : sinceText(last[p.id]);
+  results.innerHTML = `<div class="cabinet" style="--cols:${cols}">${rows.map(row => `<div class="shelf-row">
+      <div class="shelf-bottles">${row.map(p => `<button class="bottle${todayIds.has(p.id) ? " is-today" : ""}${p.remaining === "empty" ? " is-empty" : ""}" data-act="open" data-id="${esc(p.id)}" aria-label="${esc(p.name)}">
+        ${todayIds.has(p.id) ? '<span class="today-tag">今天</span>' : ""}${photo(p, "ph-shelf")}</button>`).join("")}</div>
+      <div class="plank" aria-hidden="true"></div>
+      <div class="shelf-labels">${row.map(p => `<button class="bottle-label" data-act="open" data-id="${esc(p.id)}" tabindex="-1">
+        <span class="n">${esc(p.name)}</span>
+        <span class="s">${esc([p.brand,p.conc].filter(Boolean).join(" · "))}</span>
+        <span class="recent">${shelfScore(p)}${esc(status(p))}</span>
+      </button>`).join("")}</div>
+    </div>`).join("")}</div>`;
 }
+// 一般 iPhone（390 寬）一排 3 罐；Pro Max 等大螢幕（430 寬）一排 4 罐
+const shelfCols = () => (($("#v-shelf")?.clientWidth || 343) >= 390 ? 4 : 3);
+let lastShelfCols = 0;
+window.addEventListener("resize", () => {
+  if (S.view !== "shelf" || shelfCols() === lastShelfCols) return;
+  lastShelfCols = shelfCols();
+  renderShelfResults();
+});
 
 function renderLog(){
   const el = $("#v-log");
@@ -904,26 +1031,31 @@ function renderLog(){
   for (let i = 0; i < first.getDay(); i++) cal += `<div class="day blank"></div>`;
   let monthCount = 0;
   for (let d = 1; d <= dim; d++) {
-    const ds = `${y}-${pad(m)}-${pad(d)}`, w = S.wears[ds], p = w && byId(w.perfumeId);
-    if (p) monthCount++;
+    const ds = `${y}-${pad(m)}-${pad(d)}`, entries = wearsOn(ds);
+    const bottles = [...new Set(entries.map(w => w.perfumeId))].map(byId).filter(Boolean);
+    if (entries.length) monthCount++;
     const future = ds > TODAY;
-    cal += `<button class="day ${ds===TODAY?"is-today":""} ${future?"future":""}" ${future?"disabled":""} data-act="day" data-v="${ds}" aria-label="${m}月${d}日${p ? "，" + esc(p.name) : ""}">
-      <span class="dn">${d}</span>${p ? `<span class="dot" style="--c:${famColor(p)}">${esc((p.name.match(/[A-Za-z0-9]/) || [p.name[0]])[0].toUpperCase())}</span>` : ""}</button>`;
+    const extra = bottles.length > 1 ? `+${bottles.length - 1}` : entries.length > 1 ? `×${entries.length}` : "";
+    cal += `<button class="day ${ds===TODAY?"is-today":""} ${future?"future":""}" ${future?"disabled":""} data-act="day" data-v="${ds}" aria-label="${m}月${d}日${bottles.length ? "，" + esc(bottles.map(p => p.name).join("、")) : ""}">
+      <span class="dn">${d}</span>${bottles.length ? `<span class="cal-bottle">${photo(bottles[0], "ph-cal")}${extra ? `<span class="cal-more">${extra}</span>` : ""}</span>` : ""}</button>`;
   }
-  // stats
+  // stats（同一天同一支只算一次）
   const since90 = ymd(new Date(Date.now() - 90*864e5));
-  const cnt = {};
-  Object.entries(S.wears).forEach(([d,w]) => { if (d >= since90) cnt[w.perfumeId] = (cnt[w.perfumeId]||0)+1; });
+  const cnt = {}, seen = new Set();
+  S.wearList.forEach(({date,perfumeId}) => {
+    const key = perfumeId + "|" + date;
+    if (date >= since90 && !seen.has(key)) { seen.add(key); cnt[perfumeId] = (cnt[perfumeId]||0)+1; }
+  });
   const top = Object.entries(cnt).filter(([id]) => byId(id)).sort((a,b) => b[1]-a[1]).slice(0,5);
   const {last} = lastWorn(null);
-  const cold = S.perfumes.filter(p => p.remaining !== "empty").map(p => [p, last[p.id]]).sort((a,b) => (a[1]||"0") < (b[1]||"0") ? -1 : 1).slice(0,5);
+  const cold = S.perfumes.filter(p => isOwned(p) && p.remaining !== "empty").map(p => [p, last[p.id]]).sort((a,b) => (a[1]||"0") < (b[1]||"0") ? -1 : 1).slice(0,5);
   el.innerHTML = `<div class="card">
       <div class="cal-head"><button data-act="month" data-v="-1" aria-label="上個月">‹</button><b>${y} 年 ${m} 月</b><button data-act="month" data-v="1" aria-label="下個月">›</button></div>
       <div class="cal">${cal}</div>
       <p class="small muted" style="margin:10px 0 0">這個月噴了 <b class="mono">${monthCount}</b> 天。點日期可以補記或修改。</p>
     </div>
     <div class="stats">
-      <div class="card"><div class="label">近 90 天最常用</div>${top.length ? `<ol class="rank">${top.map(([id,n]) => `<li><span>${esc(byId(id).name)}</span><span class="mono">${n} 次</span></li>`).join("")}</ol>` : `<p class="small muted" style="margin:6px 0 0">還沒有紀錄。在「今日」按「今天噴這支」就會開始累積。</p>`}</div>
+      <div class="card"><div class="label">近 90 天最常用</div>${top.length ? `<ol class="rank">${top.map(([id,n]) => `<li><span>${esc(byId(id).name)}</span><span class="mono">${n} 天</span></li>`).join("")}</ol>` : `<p class="small muted" style="margin:6px 0 0">還沒有紀錄。在「今日」按「今天噴這支」就會開始累積。</p>`}</div>
       <div class="card"><div class="label">冷落最久</div><ol class="rank">${cold.map(([p,d]) => `<li><span>${esc(p.name)}</span><span class="mono">${esc(sinceText(d))}</span></li>`).join("")}</ol></div>
     </div>`;
 }
@@ -989,11 +1121,57 @@ function closeSheet(){
   window.scrollTo(0, pageScrollY);
 }
 
+// 還沒有 Fragrantica 完整資料（季節投票、香調比例、擴散／持久投票）時，提示可以請 Claude 補
+const hasFullDetails = p => !!(fragranticaId(p.source) && p.seasons && p.accords?.length && p.votes);
+function missingDetails(p){
+  if (hasFullDetails(p)) return "";
+  const linked = !!fragranticaId(p.source);
+  return `<div class="missing-details">
+    <div class="small">${linked ? "已連到 Fragrantica，但還沒有網友的季節投票和香調比例。" : "還沒有 Fragrantica 的瓶身照、季節投票和香調比例。"}
+      把這支告訴 Claude，就能補上完整資料，下次打開 App 會自動帶入。</div>
+    <button class="chip" data-act="ask-claude" data-id="${esc(p.id)}">複製給 Claude 的訊息</button>
+  </div>`;
+}
+// 願望清單／試香：找出香調比例最接近的、你已經有的香水
+function similarOwned(p){
+  const vec = x => Object.fromEntries((x.accords || []).map(([k,v]) => [k, num(v,0)]));
+  const a = vec(p), norm = v => Math.sqrt(Object.values(v).reduce((s,x) => s + x*x, 0));
+  if (!norm(a)) return "";
+  let best = null, bestSim = 0;
+  for (const q of S.perfumes) {
+    if (!isOwned(q) || q.id === p.id) continue;
+    const b = vec(q), nb = norm(b);
+    if (!nb) continue;
+    const sim = Object.keys(a).reduce((s,k) => s + a[k] * (b[k] || 0), 0) / (norm(a) * nb);
+    if (sim > bestSim) { bestSim = sim; best = q; }
+  }
+  return best ? `<button class="similar" data-act="open" data-id="${esc(best.id)}">${photo(best,"ph-sm")}
+    <span>跟你的 <b>${esc(best.name)}</b> 最像<br><span class="small muted">香調相似度 ${Math.round(bestSim*100)}%</span></span></button>` : "";
+}
 function detailSheet(id){
   const p = byId(id); if (!p) return;
   const {last, count} = lastWorn(null);
-  const isToday = S.wears[TODAY] && S.wears[TODAY].perfumeId === id;
+  const todayCount = wearsOn(TODAY).filter(w => w.perfumeId === id).length;
   const score = communityScore(p);
+  const stars = `<div><div class="label">${isOwned(p) ? "我的評分" : "我的印象"}</div><div class="stars">${[1,2,3,4,5].map(n => `<button class="${num(p.rating,0)>=n?"on":""}" data-act="rate" data-id="${esc(id)}" data-v="${n}" aria-pressed="${p.rating===n}" aria-label="${n} 星">★</button>`).join("")}</div></div>`;
+  const controls = isOwned(p) ? `<div class="actions">
+        <button class="btn primary" data-act="wear" data-id="${esc(id)}">${todayCount ? "補香（再記一次）" : wearsOn(TODAY).length ? "今天也噴這支" : "今天噴這支"}</button>
+        <button class="btn ghost" data-act="edit" data-id="${esc(id)}">編輯</button>
+      </div>
+      ${todayCount ? `<div class="done-badge">✓ 今天已噴 ${todayCount} 次</div>` : ""}
+      ${stars}
+      <div><div class="label" style="margin-bottom:8px">剩量${p.remaining === "empty" ? " · 已用完" : ""}</div>
+        <div class="stock-row">${Object.entries(REMAIN).map(([k,v]) => `<button class="chip" data-act="remain" data-id="${esc(id)}" data-v="${k}" aria-pressed="${p.remaining===k}">${v}</button>`).join("")}
+          ${stockButton(p,"detail")}</div>
+      </div>`
+    : `<div class="own-tag">${p.own === "wish" ? "願望清單" : `試香過${p.triedOn ? ` · ${wearDateLabel(p.triedOn)}` : ""}`}</div>
+      <div class="actions">
+        <button class="btn primary" data-act="own" data-id="${esc(id)}">買到了，加入香水櫃</button>
+        ${p.own === "wish" ? `<button class="btn ghost" data-act="tried" data-id="${esc(id)}">已經試香</button>` : ""}
+        <button class="btn ghost" data-act="edit" data-id="${esc(id)}">編輯</button>
+      </div>
+      ${stars}
+      ${similarOwned(p)}`;
   openSheet(`<div class="pick-top" style="--c:${famColor(p)}">
       <div style="min-width:0">
         <div class="small muted">${esc([p.brand, p.conc].filter(Boolean).join(" · "))}</div>
@@ -1003,17 +1181,9 @@ function detailSheet(id){
       </div>
       ${photo(p, "ph-lg", "eager")}
     </div>
-    <div class="detail-controls">
-      <div class="actions">
-        ${isToday ? `<span class="done-badge">✓ 今天噴的就是它</span>` : `<button class="btn primary" data-act="wear" data-id="${esc(id)}">${S.wears[TODAY] ? "改成今天噴這支" : "今天噴這支"}</button>`}
-        <button class="btn ghost" data-act="edit" data-id="${esc(id)}">編輯</button>
-      </div>
-      <div><div class="label">我的評分</div><div class="stars">${[1,2,3,4,5].map(n => `<button class="${num(p.rating,0)>=n?"on":""}" data-act="rate" data-id="${esc(id)}" data-v="${n}" aria-pressed="${p.rating===n}" aria-label="${n} 星">★</button>`).join("")}</div></div>
-      <div><div class="label" style="margin-bottom:8px">剩量${p.remaining === "empty" ? " · 已用完" : ""}</div>
-        <div class="stock-row">${Object.entries(REMAIN).map(([k,v]) => `<button class="chip" data-act="remain" data-id="${esc(id)}" data-v="${k}" aria-pressed="${p.remaining===k}">${v}</button>`).join("")}
-          ${stockButton(p,"detail")}</div>
-      </div>
-    </div>
+    <div class="detail-controls">${controls}</div>
+    ${!isOwned(p) && p.memo ? `<div class="note-list"><span class="label">心得</span><span>${esc(p.memo)}</span></div>` : ""}
+    ${missingDetails(p)}
     ${noteList(p.notes)}
     <details class="disclosure detail-profile">
       <summary>香調圖表與使用資訊</summary>
@@ -1026,7 +1196,7 @@ function detailSheet(id){
           ${Number.isFinite(p.tMin) && Number.isFinite(p.tMax) ? `<dt>舒適溫度</dt><dd class="mono">${p.tMin}–${p.tMax}°C</dd>` : ""}
           <dt>場合</dt><dd>${(p.occ||[]).map(o => esc(OCC[o]||o)).join("、") || "—"}</dd>
           <dt>擴散 / 持久</dt><dd><span class="mono">${num(p.strength,"未評估")} / ${num(p.longevity,"未評估")}</span>${p.votes ? `<span class="small muted">（依網友投票換算，滿分 5）</span>` : ""}</dd>
-          <dt>使用</dt><dd>${count[id]||0} 次 · 上次 ${esc(sinceText(last[id]))}</dd>
+          ${isOwned(p) ? `<dt>使用</dt><dd>噴過 ${count[id]||0} 天 · 上次 ${esc(sinceText(last[id]))}</dd>` : ""}
           ${p.memo ? `<dt>備註</dt><dd>${esc(p.memo)}</dd>` : ""}
           ${fragranticaId(p.source) ? `<dt>資料來源</dt><dd><a href="${esc(p.source)}" target="_blank" rel="noopener">Fragrantica 頁面</a></dd>` : ""}
           ${/^https:\/\/[^\s]+$/i.test(p.catalogSource || "") ? `<dt>版本資料</dt><dd><a href="${esc(p.catalogSource)}" target="_blank" rel="noopener">${p.catalogSource.startsWith("https://www.scento.com/") ? "Scento" : "品牌官方頁面"}</a></dd>` : ""}
@@ -1087,18 +1257,58 @@ async function readScento(path){
   }
 }
 
+// Scento 的英文香調名 → 中文（沒列到的保留原文）
+const NOTE_ZH = Object.fromEntries(Object.entries({
+  "bergamot":"香檸檬","lemon":"檸檬","lime":"萊姆","orange":"柳橙","mandarin":"橘子","mandarin orange":"橘子","grapefruit":"葡萄柚",
+  "neroli":"橙花","orange blossom":"橙花","petitgrain":"苦橙葉","yuzu":"柚子","citron":"香櫞","bitter orange":"苦橙","blood orange":"血橙",
+  "pink pepper":"粉紅胡椒","pepper":"胡椒","black pepper":"黑胡椒","sichuan pepper":"花椒","cardamom":"小豆蔻","ginger":"生薑","cinnamon":"肉桂",
+  "nutmeg":"肉豆蔻","clove":"丁香","cloves":"丁香","saffron":"番紅花","cumin":"孜然","lavender":"薰衣草","sage":"鼠尾草","clary sage":"快樂鼠尾草",
+  "rosemary":"迷迭香","mint":"薄荷","peppermint":"薄荷","basil":"羅勒","thyme":"百里香","juniper":"杜松","juniper berries":"杜松漿果",
+  "artemisia":"艾蒿","geranium":"天竺葵","rose":"玫瑰","bulgarian rose":"保加利亞玫瑰","damask rose":"大馬士革玫瑰","jasmine":"茉莉",
+  "iris":"鳶尾","orris":"鳶尾根","orris root":"鳶尾根","violet":"紫羅蘭","violet leaf":"紫羅蘭葉","tuberose":"晚香玉","ylang-ylang":"依蘭",
+  "magnolia":"木蘭","lily of the valley":"鈴蘭","peony":"牡丹","freesia":"小蒼蘭","gardenia":"梔子花","orchid":"蘭花","lotus":"蓮花",
+  "narcissus":"水仙","apple":"蘋果","green apple":"青蘋果","pear":"梨","pineapple":"鳳梨","blackcurrant":"黑醋栗","black currant":"黑醋栗",
+  "cassis":"黑醋栗","raspberry":"覆盆子","peach":"桃子","plum":"李子","fig":"無花果","fig leaf":"無花果葉","coconut":"椰子","lychee":"荔枝",
+  "mango":"芒果","melon":"甜瓜","watermelon":"西瓜","strawberry":"草莓","cherry":"櫻桃","blackberry":"黑莓","rhubarb":"大黃",
+  "vanilla":"香草","tonka bean":"零陵香豆","tonka":"零陵香豆","caramel":"焦糖","honey":"蜂蜜","cocoa":"可可","cacao":"可可","chocolate":"巧克力",
+  "coffee":"咖啡","almond":"杏仁","praline":"果仁糖","milk":"牛奶","rice":"米","sandalwood":"檀香","cedar":"雪松","cedarwood":"雪松",
+  "vetiver":"岩蘭草","patchouli":"廣藿香","oud":"沉香","agarwood":"沉香","guaiac wood":"愈創木","birch":"樺木","oakmoss":"橡苔","moss":"苔蘚",
+  "pine":"松木","fir":"冷杉","cypress":"絲柏","amber":"琥珀","amberwood":"琥珀木","ambroxan":"降龍涎香醚","ambergris":"龍涎香",
+  "labdanum":"勞丹脂","benzoin":"安息香","incense":"焚香","frankincense":"乳香","olibanum":"乳香","myrrh":"沒藥","elemi":"欖香脂",
+  "musk":"麝香","white musk":"白麝香","leather":"皮革","suede":"麂皮","tobacco":"菸草","smoke":"煙燻","rum":"蘭姆酒","cognac":"干邑",
+  "whiskey":"威士忌","tea":"茶","green tea":"綠茶","black tea":"紅茶","sea salt":"海鹽","salt":"鹽","sea notes":"海洋調","marine notes":"海洋調",
+  "aquatic notes":"水生調","ozonic notes":"臭氧調","mineral notes":"礦物調","metallic notes":"金屬調","aldehydes":"醛","cashmeran":"開司米酮",
+  "ambrette":"黃葵","davana":"印蒿","bamboo":"竹","grass":"青草","green notes":"綠葉調","galbanum":"白松香","cashmere wood":"開司米木"
+}));
+const zhNote = name => NOTE_ZH[String(name).trim().toLowerCase()] || String(name).trim();
+// Scento 的香氣描述詞 → App 的香調分類
+const SCENTO_WORDS = {citrusy:"citrus",citrus:"citrus",fresh:"fresh",aquatic:"aquatic",marine:"aquatic",watery:"aquatic",green:"green",
+  herbal:"herbal",aromatic:"aromatic",woody:"woody",earthy:"earthy",mossy:"mossy",spicy:"warmspicy",peppery:"freshspicy",warm:"amber",
+  amber:"amber",ambery:"amber",resinous:"balsamic",balsamic:"balsamic",smoky:"smoky",leathery:"leather",leather:"leather",powdery:"powdery",
+  musky:"musky",floral:"floral",rosy:"rose",sweet:"sweet",gourmand:"sweet",vanilla:"vanilla",fruity:"fruity",oud:"oud",animalic:"animalic",
+  metallic:"metallic",mineral:"mineral",lavender:"lavender",iris:"powdery",tobacco:"smoky",boozy:"sweet",creamy:"sweet"};
 function scentoProfile(answer,requested){
   const d = answer.detail;
   if (!d?.name || versionKey({brand:d.house,name:d.name,conc:d.concentration}) !== versionKey(requested)) return null;
   const notes = NOTE_FIELDS.flatMap(([key,label]) => {
     const list = key === "overall" ? d.notes : d.pyramid?.[key];
-    const names = Array.isArray(list) ? list.filter(value => typeof value === "string" && value.trim()) : [];
+    const names = Array.isArray(list) ? list.filter(value => typeof value === "string" && value.trim()).map(zhNote) : [];
     return names.length ? [label+"："+names.join("、")] : [];
   }).join("｜");
   if (!notes) return null;
   const url = answer.scento_page?.url;
-  return {brand:requested.brand,name:d.name,conc:requested.conc,notes,
+  const profile = {brand:requested.brand,name:d.name,conc:requested.conc,notes,
     catalogSource:/^https:\/\/www\.scento\.com\//.test(url || "") ? url : "https://www.scento.com/developers/perfume-api"};
+  // 適合季節與時段：Scento 列出的給 85，沒列的給 40（Fragrantica 網友投票補上後會被取代）
+  const seasons = (d.wears?.seasons || []).map(s => s === "autumn" ? "fall" : s);
+  const hours = d.wears?.hours || [];
+  if (seasons.length || hours.length) profile.seasons = {
+    spring: seasons.includes("spring") ? 85 : 40, summer: seasons.includes("summer") ? 85 : 40,
+    fall: seasons.includes("fall") ? 85 : 40, winter: seasons.includes("winter") ? 85 : 40,
+    day: hours.includes("day") ? 85 : 40, night: hours.some(h => h === "evening" || h === "night") ? 85 : 40};
+  const families = [...new Set((d.character_words || []).map(w => SCENTO_WORDS[String(w).toLowerCase()]).filter(Boolean))].slice(0,3);
+  if (families.length) { profile.families = families; profile.accords = families.map((k,i) => [k, 100 - i*15]); }
+  return profile;
 }
 
 async function lookupPerfumeVersion(requested){
@@ -1183,7 +1393,8 @@ function matchingBottle(p){
 function duplicateNotice(p){
   if (!p) return "";
   const empty = p.remaining === "empty";
-  return `<div>${empty ? "同款已用完" : "已收藏同款"} · <b>${esc(p.name)}</b></div>
+  const label = p.own === "wish" ? "願望清單裡有這支" : p.own === "tried" ? "試香紀錄裡有這支" : empty ? "同款已用完" : "已收藏同款";
+  return `<div>${label} · <b>${esc(p.name)}</b></div>
     <div class="actions">
       <button class="btn ghost" type="button" data-act="open" data-id="${esc(p.id)}">查看已收藏</button>
       ${empty ? `<button class="btn ghost" type="button" data-act="restock" data-id="${esc(p.id)}">補貨並恢復推薦</button>` : ""}
@@ -1285,16 +1496,24 @@ function wireCatalogSearch(formIsOpen){
     button.disabled = false;
     if (formIsOpen() && generation === selected) {
       status.hidden = true;
-      if (fields() === before) editSheet(null,Object.assign({},draft,{memo:$("#f-memo").value}));
+      if (fields() === before) editSheet(null,Object.assign({},draft,{memo:$("#f-memo").value,
+        own:document.querySelector("#f-own .chip[aria-pressed='true']")?.dataset.v || "", triedOn:$("#f-tried")?.value}));
     }
   });
 }
 
+function srcHint(url){
+  const fid = fragranticaId(url);
+  if (!fid) return "貼上香水頁網址，就會顯示對應瓶照。";
+  return Store.bundle?.details?.[fid] ? "網站已經有這支的完整資料，儲存後會自動帶入。" :
+    "已找到瓶照。季節投票和香調比例可以請 Claude 補上。";
+}
 function editSheet(id,draft=null){
   const catalogFields = ["brand","name","conc","families","accords","notes","seasons","strength","longevity",
-    "occ","source","catalogSource","catalogImage","fragranticaRating","votes","memo"];
+    "occ","source","catalogSource","catalogImage","fragranticaRating","votes","memo","own","triedOn"];
   const p = id ? byId(id) : Object.assign(
-    {brand:"", name:"", conc:"", families:[], notes:"", occ:[], rating:null, remaining:null},
+    {brand:"", name:"", conc:"", families:[], notes:"", occ:[], rating:null, remaining:null,
+      own:["wish","tried"].includes(S.stock) ? S.stock : ""},
     Object.fromEntries(catalogFields.filter(key => draft && key in draft).map(key => [key,draft[key]]))
   );
   if (!p) return;
@@ -1319,14 +1538,19 @@ function editSheet(id,draft=null){
         ${concentrations.map(c => `<option value="${esc(c)}"${c===(p.conc || "") ? " selected" : ""}>${esc(concentrationLabel(c))}</option>`).join("")}
       </select></div>
       ${id ? "" : `<div class="duplicate-notice" id="f-duplicate"${duplicate ? "" : " hidden"}>${duplicateNotice(duplicate)}</div>`}
+      <div class="field"><span class="label">這支是</span><div class="chips" id="f-own" role="group" aria-label="香水類型">${Object.entries(OWN_TYPES).map(([k,label]) =>
+        `<button type="button" class="chip" data-act="fown" data-v="${k}" aria-pressed="${(p.own || "") === k}">${label}</button>`).join("")}</div></div>
+      <div class="field" id="f-tried-field"${p.own === "tried" ? "" : " hidden"}><label for="f-tried">試香日期</label>
+        <input type="date" id="f-tried" value="${esc(p.triedOn || TODAY)}"></div>
       ${lookupEdition ? '<p class="version-status" id="version-status" role="status" hidden></p>' : ""}
       <details class="disclosure form-options">
         <summary>香調與 Fragrantica</summary>
         <div class="form-section">
           <a class="lookup-link" id="f-lookup" href="${esc(fragranticaSearch(p.brand,p.name))}" target="_blank" rel="noopener">搜尋 Fragrantica ↗</a>
           <div class="field"><label for="f-src">Fragrantica 香水頁網址</label>
-            <input id="f-src" type="url" inputmode="url" value="${esc(p.source)}" placeholder="https://www.fragrantica.com/perfume/…">
-            <span class="small muted">貼上香水頁網址，就會顯示對應瓶照。</span>
+            <div class="src-row"><input id="f-src" type="url" inputmode="url" value="${esc(p.source)}" placeholder="https://www.fragrantica.asia/perfume/…">
+              <span id="f-src-preview">${fragranticaId(p.source) ? photo(p.photo ? {source:p.source} : p, "ph-sm") : ""}</span></div>
+            <span class="small muted" id="f-src-hint">${srcHint(p.source)}</span>
           </div>
           <div class="field"><label for="f-score">Fragrantica 分數（滿分 5）</label>
             <input id="f-score" type="number" min="1" max="5" step="0.01" inputmode="decimal" value="${esc(p.fragranticaRating)}" placeholder="${esc(Store.bundle?.ratings?.[fragranticaId(p.source)] || "選填")}">
@@ -1399,6 +1623,13 @@ function editSheet(id,draft=null){
     return request.job;
   }
   form.addEventListener("input", e => {
+    if (e.target.id === "f-src") {
+      const url = e.target.value.trim();
+      $("#f-src-preview").innerHTML = fragranticaId(url) ? photo({source:url}, "ph-sm", "eager") : "";
+      $("#f-src-hint").textContent = srcHint(url);
+      const rating = Store.bundle?.ratings?.[fragranticaId(url)];
+      if (rating && !$("#f-score").value) $("#f-score").placeholder = String(rating);
+    }
     if (e.target.id === "f-brand" || e.target.id === "f-name" || e.target.id === "f-conc") {
       $("#f-lookup").href = fragranticaSearch($("#f-brand").value,$("#f-name").value);
       if (versionKey(identity()) !== pending?.key) report("");
@@ -1460,8 +1691,17 @@ async function submitForm(orig,version){
     accords:keptAccords, families, seasons, occ:picked("#f-occ"),
     strength:n("#f-str"), longevity:n("#f-lon"), fragranticaRating:n("#f-score"),
     memo:v("#f-memo"), source:v("#f-src")});
+  const own = document.querySelector("#f-own .chip[aria-pressed='true']")?.dataset.v || "";
+  if (own) { p.own = own; if (own === "tried") p.triedOn = $("#f-tried").value || TODAY; else delete p.triedOn; }
+  else { delete p.own; delete p.triedOn; }
   if (version) applyPerfumeVersion(p,version);
-  await act(() => Store.savePerfume(p, true), orig.id ? "已儲存" : "已新增香水");
+  // 換了 Fragrantica 網址就重新對應網站的完整資料
+  if ((orig.source || "") !== p.source) delete p.detailsVer;
+  const message = orig.id ? "已儲存" : own === "wish" ? "已加入願望清單" : own === "tried" ? "已加入試香紀錄" : "已新增香水";
+  await act(async () => {
+    await Store.savePerfume(p, true);
+    if (Store.bundle?.details?.[fragranticaId(p.source)]) { Store.applyDetails(Store.bundle); Store.save(); }
+  }, message);
   detailSheet(id);
 }
 
@@ -1470,28 +1710,39 @@ function wearDateLabel(date){
   return `${month} 月 ${day} 日`;
 }
 function daySheet(date){
-  const w = S.wears[date];
-  const p = w && byId(w.perfumeId);
-  const context = w ? [OCC[w.occ], Number.isFinite(w.temp) ? w.temp+"°C" : "", w.wet ? "雨濕" : ""].filter(Boolean) : [];
+  const entries = wearsOn(date);
   openSheet(`<h3>${wearDateLabel(date)}使用紀錄</h3>
-    ${w ? `<div class="wear-summary">
-      <div><div class="small muted">${p ? esc([p.brand,p.conc].filter(Boolean).join(" · ")) : ""}</div>
-        <b>${esc(p?.name || "已從香水櫃移除的香水")}</b>
-        ${context.length ? `<div class="small muted">${esc(context.join(" · "))}</div>` : ""}
-      </div>
-      ${p ? photo(p,"ph-sm") : ""}
-    </div>` : '<div class="small muted">這天還沒有使用紀錄。</div>'}
+    ${entries.length ? `<div class="day-entries">${entries.map((w,i) => {
+      const p = byId(w.perfumeId);
+      const refill = entries.slice(0,i).some(x => x.perfumeId === w.perfumeId);
+      const context = [w.time, refill ? "補香" : "", OCC[w.occ], Number.isFinite(w.temp) ? w.temp+"°C" : "", w.wet ? "雨濕" : ""].filter(Boolean);
+      return `<div class="wear-summary">
+        ${p ? photo(p,"ph-sm") : ""}
+        <div style="flex:1;min-width:0"><b>${esc(p?.name || "已從香水櫃移除的香水")}</b>
+          ${context.length ? `<div class="small muted">${esc(context.join(" · "))}</div>` : ""}
+        </div>
+        <div class="entry-actions">
+          <button class="chip" data-act="edit-wear" data-id="${esc(w.id)}" data-v="${esc(date)}">更改</button>
+          <button class="chip danger-chip" data-act="del-wear" data-id="${esc(w.id)}" data-v="${esc(date)}">刪除</button>
+        </div>
+      </div>`;
+    }).join("")}</div>` : '<div class="small muted">這天還沒有使用紀錄。</div>'}
     <div class="actions">
-      ${S.perfumes.length ? `<button class="btn primary" data-act="edit-day" data-v="${esc(date)}">${w ? "更改紀錄" : "補記香水"}</button>` : ""}
-      ${w ? `<button class="btn ghost danger" data-act="clearday" data-v="${esc(date)}">清除紀錄</button>` : ""}
+      ${S.perfumes.some(isOwned) ? `<button class="btn primary" data-act="edit-day" data-v="${esc(date)}">${entries.length ? "再記一筆（補香或換一支）" : "補記香水"}</button>` : ""}
     </div>`);
 }
 
-function editDaySheet(date){
-  const current = S.wears[date]?.perfumeId;
+// wearId 有值：更改那一筆；沒有：新增一筆
+function editDaySheet(date, wearId = null){
+  const entry = wearId ? S.wearList.find(w => w.id === wearId) : null;
+  const current = entry?.perfumeId;
   let selected = current || "";
-  openSheet(`<h3>${wearDateLabel(date)}${current ? "更改紀錄" : "補記香水"}</h3>
+  const defaultTime = entry?.time || (date === TODAY ? nowTime() : "");
+  openSheet(`<h3>${wearDateLabel(date)}${entry ? "更改紀錄" : "補記香水"}</h3>
     <form id="day-form" class="perfume-form">
+      <div class="field"><label for="day-time">時間（選填）</label>
+        <input type="time" id="day-time" value="${esc(defaultTime)}">
+      </div>
       <div class="field"><label for="day-search">搜尋要記錄的香水</label>
         <input type="search" id="day-search" placeholder="品牌或香水名稱" autocomplete="off">
       </div>
@@ -1506,18 +1757,19 @@ function editDaySheet(date){
   function updateSelection(){
     const perfume = byId(selected);
     $("#day-selection").textContent = perfume ? "已選："+perfume.name : "請選擇一支香水";
-    save.disabled = !perfume || selected === current;
+    save.disabled = !perfume || (selected === current && $("#day-time").value === (entry?.time || ""));
     options.querySelectorAll("[data-wear-option]").forEach(button =>
       button.setAttribute("aria-pressed",button.dataset.wearOption === selected));
   }
   function renderOptions(){
-    const list = S.perfumes.filter(p => matchesCatalog(input.value,...catalogSearchFields(p))).sort(comparePerfumes);
+    const list = S.perfumes.filter(p => isOwned(p) && matchesCatalog(input.value,...catalogSearchFields(p))).sort(comparePerfumes);
     options.innerHTML = list.length ? list.map(p => `<button type="button" class="pickrow" data-wear-option="${esc(p.id)}"
       aria-pressed="${selected===p.id}" style="--c:${famColor(p)}"><i></i><span class="wear-option-name">${esc(p.name)}</span>
       <span class="small muted">${esc([p.brand,p.conc].filter(Boolean).join(" · "))}</span></button>`).join("") :
       '<span class="small muted" role="status">找不到符合的香水。</span>';
   }
   input.addEventListener("input",renderOptions);
+  $("#day-time").addEventListener("input",updateSelection);
   input.addEventListener("keydown", e => { if (e.key === "Enter") e.preventDefault(); });
   options.addEventListener("click",e => {
     const button = e.target.closest("[data-wear-option]");
@@ -1529,7 +1781,8 @@ function editDaySheet(date){
     e.preventDefault();
     if (save.disabled || !byId(selected)) return;
     save.disabled = true;
-    await act(() => Store.saveWear(date,Object.assign({},S.wears[date],{perfumeId:selected})),"已儲存紀錄");
+    const time = $("#day-time").value || undefined;
+    await act(() => entry ? Store.updateWear(entry.id,{perfumeId:selected,time}) : Store.addWear({date,time,perfumeId:selected}),"已儲存紀錄");
     if (form.isConnected && !$("#sheet").hidden) daySheet(date);
   });
   renderOptions();
@@ -1566,11 +1819,42 @@ document.addEventListener("click", async e => {
     case "wear": {
       if (Sync.on && !Sync.valid()) Sync.connect(); // 順便取得同步授權（要在點擊當下）
       const p = byId(id); closeSheet();
-      await act(() => Store.saveWear(TODAY, {date:TODAY, perfumeId:id, occ:S.ctx.occ, temp:S.ctx.temp, wet:!!S.ctx.wet}), `已記錄：今天噴 ${p ? p.name : ""}`);
+      const refill = wearsOn(TODAY).some(w => w.perfumeId === id);
+      await act(() => Store.addWear({date:TODAY, time:nowTime(), perfumeId:id, occ:S.ctx.occ, temp:S.ctx.temp, wet:!!S.ctx.wet}),
+        refill ? `已記錄補香：${p ? p.name : ""}` : `已記錄：今天噴 ${p ? p.name : ""}`);
       if (S.view !== "today") location.hash = "today";
       break;
     }
-    case "unwear": await act(() => Store.deleteWear(TODAY), "已取消今天的紀錄"); break;
+    case "unwear": {
+      const lastEntry = wearsOn(TODAY).pop();
+      if (lastEntry) await act(() => Store.deleteWear(lastEntry.id), "已取消最後一筆紀錄");
+      break;
+    }
+    case "edit-wear": editDaySheet(v, id); break;
+    case "del-wear":
+      if (delArm !== id) { delArm = id; b.textContent = "確定刪除？"; setTimeout(() => { if (delArm === id) { delArm = null; if (b.isConnected) b.textContent = "刪除"; } }, 3500); break; }
+      delArm = null; await act(() => Store.deleteWear(id), "已刪除這筆紀錄"); daySheet(v); break;
+    case "own": {
+      const p = byId(id); if (!p) break;
+      const q = Object.assign({}, p, {remaining:"full"}); delete q.own;
+      await act(() => Store.savePerfume(q), `已加入香水櫃：${p.name}`);
+      detailSheet(id);
+      break;
+    }
+    case "tried": {
+      const p = byId(id); if (!p) break;
+      await act(() => Store.savePerfume(Object.assign({}, p, {own:"tried", triedOn:TODAY})), "已移到試香紀錄");
+      detailSheet(id);
+      break;
+    }
+    case "ask-claude": {
+      const p = byId(id); if (!p) break;
+      const text = `請幫我補香水櫃這支香水的 Fragrantica 完整資料：${[p.brand, p.name, p.conc].filter(Boolean).join(" ")}` +
+        (fragranticaId(p.source) ? `（${p.source}）` : "");
+      try { await navigator.clipboard.writeText(text); toast("已複製，貼給 Claude 就可以"); }
+      catch { toast(text); }
+      break;
+    }
     case "open": detailSheet(id); break;
     case "close": closeSheet(); break;
     case "edit": editSheet(id); break;
@@ -1595,6 +1879,10 @@ document.addEventListener("click", async e => {
       break;
     }
     case "ffam": case "focc": case "fsea": b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") !== "true"); break;
+    case "fown":
+      document.querySelectorAll("#f-own .chip").forEach(chip => chip.setAttribute("aria-pressed", chip === b));
+      $("#f-tried-field").hidden = v !== "tried";
+      break;
     case "del":
       if (delArm !== id) { delArm = id; b.textContent = "確定刪除？再點一次"; setTimeout(() => { if (delArm === id) { delArm = null; if (b.isConnected) b.textContent = "刪除"; } }, 3500); break; }
       delArm = null; closeSheet(); await act(() => Store.deletePerfume(id), "已刪除"); break;
@@ -1611,7 +1899,6 @@ document.addEventListener("click", async e => {
     case "month": { const [y,m] = S.calMonth.split("-").map(Number); const d = new Date(y, m-1+Number(v), 1); S.calMonth = `${d.getFullYear()}-${pad(d.getMonth()+1)}`; render(); break; }
     case "day": daySheet(v); break;
     case "edit-day": if (S.perfumes.length) editDaySheet(v); break;
-    case "clearday": await act(() => Store.deleteWear(v), "已清除"); daySheet(v); break;
     case "export": {
       const data = JSON.stringify(Store.data);
       const io = $("#io"); io.value = data;
@@ -1628,7 +1915,7 @@ document.addEventListener("click", async e => {
       // 匯入的資料視為最新
       const now = Date.now();
       Object.values(data.perfumes).forEach(p => { p.t = now; delete p.b; Store.data.perfumes[p.id] = p; });
-      Object.values(data.wears).forEach(w => { w.t = now; Store.data.wears[w.date] = w; });
+      Object.values(data.wears).forEach(w => { w.t = now; Store.data.wears[w.id] = w; });
       if (Store.bundle) Store.mergeBundle(Store.bundle);
       Store.save(); toast("匯入完成"); break;
     }
