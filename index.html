@@ -791,7 +791,7 @@ function renderToday(){
   }
   const offset = recs.length ? S.offset % recs.length : 0;
   const ordered = worn ? recs : recs.slice(offset).concat(recs.slice(0,offset));
-  const main = worn ? ordered.find(r => r.p.id === worn.id) || {p:worn, why:[], tips:[]} : ordered[0];
+  const main = worn ? {p:worn, why:[], tips:[]} : ordered[0];
   const p = main.p, alts = ordered.filter(r => r.p.id !== p.id).slice(0,3);
   const last = lastWorn(worn ? TODAY : null).last;
   html += `<article class="card pick" style="--c:${famColor(p)}">
