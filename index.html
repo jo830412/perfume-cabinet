@@ -152,6 +152,11 @@ body.sheet-open{position:fixed;left:0;right:0;width:100%;overflow:hidden}
 .detail-controls{display:grid;gap:10px}
 .detail-controls .actions{margin-top:0}
 .detail-controls .chip{min-height:44px}
+.stock-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.stock-action{min-height:44px;padding-inline:12px}
+.catalog-results{display:grid;gap:5px}
+.catalog-choice{display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:44px;width:100%;border:1px solid var(--line);border-radius:10px;background:var(--bg);text-align:left;padding:8px 10px}
+.catalog-choice span{min-width:0;overflow-wrap:anywhere}
 .detail-profile{background:var(--bg)}
 .profile-body{display:grid;gap:14px;padding:0 12px 12px}
 .community-score{display:inline-flex;gap:6px;align-items:baseline;color:var(--muted);font-size:12px}
@@ -271,7 +276,7 @@ const FAM_EDIT = Object.fromEntries(Object.entries(FAM).filter(([k]) => !LEGACY.
 const accName = k => (ACC[k] || [k])[0];
 const accColor = k => (ACC[k] || [0,"#8A8F9C"])[1];
 const OCC = {office:"上班",casual:"休閒",date:"約會",formal:"正式",sport:"運動戶外",night:"夜晚聚會"};
-const REMAIN = {full:"滿",most:"多",half:"半",low:"少",empty:"空"};
+const REMAIN = {full:"滿",most:"多",half:"半",low:"少"};
 const SEASON = {spring:"春",summer:"夏",fall:"秋",winter:"冬",day:"白天",night:"晚上"};
 const SEASON_CENTER = {winter:13, spring:21, fall:24, summer:30}; // 各季節代表氣溫 °C
 const NEUTRAL_SUITABILITY = 70;
@@ -345,7 +350,7 @@ function applyWeather(){
 /* ---------- 資料：存在手機（localStorage），可同步到 Google 雲端硬碟 ---------- */
 // Google Cloud Console →「API 和服務」→「憑證」→ OAuth 用戶端 ID（網頁應用程式）。這個 ID 是公開的，不是密碼。
 const GOOGLE_CLIENT_ID = "288072368244-huo1rnfas2s4rovnab1cs91hc6n6e3lt.apps.googleusercontent.com";
-const USER_FIELDS = ["rating","remaining","memo","row","col","occ","photo","fragranticaRating"];
+const USER_FIELDS = ["rating","remaining","remainingBeforeEmpty","memo","row","col","occ","photo","fragranticaRating"];
 const Store = {
   bundle: null,
   data: {perfumes:{}, wears:{}},
@@ -739,6 +744,15 @@ function sinceText(date){
   return d === 0 ? "今天" : d === 1 ? "昨天" : `${d} 天前`;
 }
 const byId = id => S.perfumes.find(p => p.id === id);
+function remainingUpdate(p,remaining){
+  const updated = Object.assign({},p,{remaining});
+  if (remaining === "empty") updated.remainingBeforeEmpty = p.remaining ?? null;
+  else delete updated.remainingBeforeEmpty;
+  return updated;
+}
+function stockButton(p,origin){
+  return `<button class="btn ghost stock-action" data-act="stock-toggle" data-id="${esc(p.id)}" data-origin="${origin}">${p.remaining === "empty" ? "恢復推薦" : "標記用完"}</button>`;
+}
 
 function render(){
   $("#hdr-date").textContent = `${new Date().getMonth()+1}月${new Date().getDate()}日 週${WEEK[new Date().getDay()]}`;
@@ -805,9 +819,10 @@ function renderToday(){
       ${photo(p, "ph-lg", "eager")}
     </div>
     <div class="actions">
-      ${worn ? `<span class="done-badge">✓ 已記錄</span><button class="btn ghost" data-act="unwear" style="margin-left:auto">取消紀錄</button>`
+      ${worn ? `<span class="done-badge">✓ 已記錄${p.remaining === "empty" ? " · 已用完" : ""}</span><button class="btn ghost" data-act="unwear" style="margin-left:auto">取消紀錄</button>`
              : `<button class="btn primary" data-act="wear" data-id="${esc(p.id)}">今天噴這支</button><button class="btn ghost" data-act="open" data-id="${esc(p.id)}">詳情</button>`}
     </div>
+    ${worn ? `<div class="stock-row" style="margin-top:10px">${stockButton(p,"today")}</div>` : ""}
     ${main.why.length ? `<ul class="why">${main.why.map(w => `<li>${esc(w)}</li>`).join("")}</ul>` : ""}
     ${main.tips.length ? `<div class="tips">${main.tips.map(esc).join("・")}</div>` : ""}
     <div class="facts">
@@ -860,7 +875,7 @@ function renderShelfResults(){
       <span class="n">${esc(p.name)}</span>
       <span class="s">${esc([p.brand,p.conc].filter(Boolean).join(" · "))}</span>
       ${communityScore(p)}
-      <span class="recent">${worn ? "今天已噴" : esc(sinceText(last[p.id]))}</span>
+      <span class="recent">${p.remaining === "empty" ? "已用完" : worn ? "今天已噴" : esc(sinceText(last[p.id]))}</span>
     </button>`;
   }).join("")}</div>`;
 }
@@ -907,7 +922,7 @@ function renderPrefs(){
       <div>・約會、夜晚聚會採用晚上預報，其餘場合採用白天預報</div>
       <div>・符合今天的場合加分；上班時太濃的扣分</div>
       <div>・你的評分也會影響推薦，分數每天會有小幅變化</div>
-      <div>・剩量標成「空」的香水會排除</div>
+      <div>・已用完的香水會排除</div>
     </div>
     <h2>Google 雲端硬碟同步</h2>
     <div class="card" style="display:grid;gap:10px">
@@ -978,7 +993,10 @@ function detailSheet(id){
         <button class="btn ghost" data-act="edit" data-id="${esc(id)}">編輯</button>
       </div>
       <div><div class="label">我的評分</div><div class="stars">${[1,2,3,4,5].map(n => `<button class="${num(p.rating,0)>=n?"on":""}" data-act="rate" data-id="${esc(id)}" data-v="${n}" aria-pressed="${p.rating===n}" aria-label="${n} 星">★</button>`).join("")}</div></div>
-      <div><div class="label" style="margin-bottom:8px">剩量</div><div class="chips">${Object.entries(REMAIN).map(([k,v]) => `<button class="chip" data-act="remain" data-id="${esc(id)}" data-v="${k}" aria-pressed="${p.remaining===k}">${v}</button>`).join("")}</div></div>
+      <div><div class="label" style="margin-bottom:8px">剩量${p.remaining === "empty" ? " · 已用完" : ""}</div>
+        <div class="stock-row">${Object.entries(REMAIN).map(([k,v]) => `<button class="chip" data-act="remain" data-id="${esc(id)}" data-v="${k}" aria-pressed="${p.remaining===k}">${v}</button>`).join("")}
+          ${stockButton(p,"detail")}</div>
+      </div>
     </div>
     ${noteList(p.notes)}
     <details class="disclosure detail-profile">
@@ -1112,9 +1130,140 @@ function applyPerfumeVersion(p,version){
   if (version.votes) p.votes = version.votes;
 }
 
-function editSheet(id){
-  const p = id ? byId(id) : {brand:"", name:"", conc:"", families:[], notes:"", occ:[], rating:null, remaining:null};
+const CATALOG_BRAND_ALIASES = {
+  "Hermès":["愛馬仕"], Chanel:["香奈兒"], Dior:["迪奧"], "Louis Vuitton":["LV","路易威登"],
+  Montblanc:["萬寶龍"], Creed:["信仰"], Prada:["普拉達"], Burberry:["巴寶莉"], Diptyque:["蒂普提克"]
+};
+const searchText = value => String(value ?? "").normalize("NFKD").toLowerCase().replace(/[\p{M}'’]/gu,"")
+  .replace(/[^\p{L}\p{N}]+/gu," ").trim();
+const brandAlias = brand => Object.keys(CATALOG_BRAND_ALIASES).find(name => catalogText(name) === catalogText(brand));
+function matchesCatalog(query,...values){
+  const haystack = searchText(values.join(" "));
+  return searchText(query).split(" ").every(word => haystack.includes(word));
+}
+function searchLocalCatalog(query){
+  const unique = new Map();
+  const items = [...(Store.bundle?.perfumes || []), ...(Store.bundle?.variants || []), ...S.perfumes];
+  for (const p of items) if (p.brand && p.name && !unique.has(versionKey(p))) unique.set(versionKey(p),p);
+  const perfumes = [...unique.values()].filter(p =>
+    matchesCatalog(query,p.name,p.brand,p.conc,...(CATALOG_BRAND_ALIASES[brandAlias(p.brand)] || [])));
+  const brands = [...new Set([...Object.keys(CATALOG_BRAND_ALIASES), ...items.map(p => p.brand).filter(Boolean)])]
+    .filter(brand => matchesCatalog(query,brand,...(CATALOG_BRAND_ALIASES[brandAlias(brand)] || [])));
+  return {brands,perfumes};
+}
+function remoteCatalogQuery(query){
+  const alias = Object.entries(CATALOG_BRAND_ALIASES).find(([,names]) => names.some(name => searchText(name) === searchText(query)));
+  return alias ? alias[0] : query;
+}
+async function loadCatalogChoice(choice){
+  if (choice.local) return choice.local;
+  const {brand,name,term} = choice;
+  const draft = {brand,name};
+  try {
+    const answer = await readScento("/perfumes/"+encodeURIComponent(term || name));
+    const {detail} = answer;
+    if (catalogText(detail?.house) !== catalogText(brand) || catalogName(detail?.name) !== catalogName(name)) return draft;
+    const selected = catalogConc(detail.concentration);
+    const conc = selected === "parfum" ? "Parfum" : selected === "extrait" ? "Extrait" : selected.toUpperCase();
+    const namedConc = name && searchText(name).match(VERSION_SUFFIX)?.[1];
+    if (namedConc && catalogConc(namedConc) !== selected) return draft;
+    return scentoProfile(answer,{brand,name,conc}) || {...draft,conc};
+  } catch {
+    return draft;
+  }
+}
+function wireCatalogSearch(formIsOpen){
+  const input = $("#f-catalog-search");
+  if (!input) return;
+  const results = $("#f-catalog-results"), status = $("#f-catalog-status");
+  const cache = new Map();
+  let timer, generation = 0, choices = [];
+  function show(query,online=[], message=""){
+    const local = searchLocalCatalog(query), brands = new Map(local.brands.map(brand => [catalogText(brand),brand]));
+    const perfumes = local.perfumes.map(p => ({name:p.name,brand:p.brand,conc:p.conc,local:p}));
+    for (const entry of online) {
+      if (entry.kind === "house" && entry.name) brands.set(catalogText(entry.name),entry.name);
+      if (entry.kind !== "perfume" || !entry.name || !entry.house) continue;
+      const suffix = searchText(entry.name).match(VERSION_SUFFIX)?.[1];
+      const duplicate = perfumes.some(p => catalogText(p.brand) === catalogText(entry.house) &&
+        catalogName(p.name) === catalogName(entry.name) && (!suffix || catalogConc(p.conc) === catalogConc(suffix)));
+      if (!duplicate) perfumes.push({name:entry.name,brand:entry.house,
+        term:entry.page?.match(/^https:\/\/www\.scento\.com\/perfumes\/([a-z\d-]+)$/i)?.[1]});
+    }
+    choices = [...[...brands.values()].slice(0,2).map(brand => ({brand})), ...perfumes.slice(0,6)];
+    results.innerHTML = choices.map(({brand,name,conc},i) => `<button type="button" class="catalog-choice" data-catalog-choice="${i}">
+      <span>${esc(name || brand)}${name ? `<br><span class="small muted">${esc([brand,conc].filter(Boolean).join(" · "))}</span>` : ""}</span>
+      ${name ? "" : '<span class="small muted">選用品牌</span>'}
+    </button>`).join("");
+    status.textContent = message || (choices.length ? "" : "找不到相符的品牌或香水，可以手動新增。");
+    status.hidden = !status.textContent;
+  }
+  function update(immediate){
+    clearTimeout(timer);
+    const requested = ++generation;
+    const query = input.value.trim();
+    if (!searchText(query) || (query.length < 2 && !/\p{Script=Han}/u.test(query))) {
+      choices = []; results.innerHTML = ""; status.hidden = true;
+      return;
+    }
+    const phrase = remoteCatalogQuery(query);
+    const key = searchText(phrase);
+    if (cache.has(key)) {
+      show(query,cache.get(key));
+      return;
+    }
+    show(query,[],"正在搜尋香水資料…");
+    timer = setTimeout(async () => {
+      try {
+        const response = await readScento("/search?"+new URLSearchParams({q:phrase,kind:"any"}));
+        const online = (response.detail?.matches || []).filter(p => matchesCatalog(phrase,p.name,p.house));
+        cache.set(key,online);
+        if (formIsOpen() && generation === requested) show(query,online);
+      } catch {
+        if (formIsOpen() && generation === requested) show(query,[],"暫時無法搜尋線上資料，可以手動新增。");
+      }
+    },immediate ? 0 : 320);
+  }
+  input.addEventListener("input", () => update(false));
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); update(true); }
+  });
+  results.addEventListener("click", async e => {
+    const button = e.target.closest("[data-catalog-choice]");
+    const choice = button && choices[Number(button.dataset.catalogChoice)];
+    if (!choice) return;
+    const selected = ++generation;
+    clearTimeout(timer);
+    if (!choice.name) {
+      $("#f-brand").value = choice.brand;
+      $("#f-lookup").href = fragranticaSearch(choice.brand,$("#f-name").value);
+      status.textContent = `已填入品牌 ${choice.brand}`;
+      status.hidden = false;
+      return;
+    }
+    button.disabled = true;
+    status.textContent = "正在帶入香水資料…";
+    status.hidden = false;
+    const fields = () => [$("#f-brand").value,$("#f-name").value,$("#f-conc").value].join("\n");
+    const before = fields();
+    const draft = await loadCatalogChoice(choice);
+    button.disabled = false;
+    if (formIsOpen() && generation === selected) {
+      status.hidden = true;
+      if (fields() === before) editSheet(null,Object.assign({},draft,{memo:$("#f-memo").value}));
+    }
+  });
+}
+
+function editSheet(id,draft=null){
+  const catalogFields = ["brand","name","conc","families","accords","notes","seasons","strength","longevity",
+    "occ","source","catalogSource","catalogImage","fragranticaRating","votes","memo"];
+  const p = id ? byId(id) : Object.assign(
+    {brand:"", name:"", conc:"", families:[], notes:"", occ:[], rating:null, remaining:null},
+    Object.fromEntries(catalogFields.filter(key => draft && key in draft).map(key => [key,draft[key]]))
+  );
   if (!p) return;
+  const lookupEdition = !!(id || draft?.conc);
   const tog = (act, map, sel) => Object.entries(map).map(([k,v]) => `<button type="button" class="chip" data-act="${act}" data-v="${k}" aria-pressed="${(sel||[]).includes(k)}">${v}</button>`).join("");
   const accSel = (p.accords && p.accords.length) ? p.accords.map(a => a[0]) : (p.families || []);
   const seaSel = p.seasons ? Object.keys(SEASON).filter(k => num(p.seasons[k],0) >= 70) : [];
@@ -1122,12 +1271,18 @@ function editSheet(id){
   const notes = splitNotes(p.notes);
   openSheet(`<h3>${id ? "編輯香水" : "新增香水"}</h3>
     <form id="pform" data-id="${esc(p.id)}" class="perfume-form">
+      ${id ? "" : `<div class="field">
+        <label for="f-catalog-search">搜尋品牌或香水</label>
+        <input id="f-catalog-search" type="search" placeholder="例如 愛馬仕、大地、Aventus" autocomplete="off" aria-controls="f-catalog-results">
+        <div class="small muted" id="f-catalog-status" role="status" hidden></div>
+        <div class="catalog-results" id="f-catalog-results"></div>
+      </div>`}
       <div class="field"><label for="f-brand">品牌</label><input id="f-brand" value="${esc(p.brand)}" required></div>
       <div class="field"><label for="f-name">香水名稱</label><input id="f-name" value="${esc(p.name)}" required></div>
       <div class="field"><label for="f-conc">濃度（選填）</label><select id="f-conc">
         ${concentrations.map(c => `<option value="${esc(c)}"${c===(p.conc || "") ? " selected" : ""}>${esc(concentrationLabel(c))}</option>`).join("")}
       </select></div>
-      ${id ? '<p class="version-status" id="version-status" role="status" hidden></p>' : ""}
+      ${lookupEdition ? '<p class="version-status" id="version-status" role="status" hidden></p>' : ""}
       <details class="disclosure form-options">
         <summary>香調與 Fragrantica</summary>
         <div class="form-section">
@@ -1165,6 +1320,7 @@ function editSheet(id){
   const originalKey = versionKey(p);
   let pending = null;
   const formIsOpen = () => form.isConnected && !$("#sheet").hidden;
+  wireCatalogSearch(formIsOpen);
   const report = message => {
     if (!versionStatus) return;
     versionStatus.textContent = message;
@@ -1202,7 +1358,7 @@ function editSheet(id){
     }
   });
   form.addEventListener("change", e => {
-    if (id && ["f-brand","f-name","f-conc"].includes(e.target.id)) prepareVersion(identity());
+    if (lookupEdition && ["f-brand","f-name","f-conc"].includes(e.target.id)) prepareVersion(identity());
   });
   form.addEventListener("invalid", e => {
     const group = e.target.closest("details");
@@ -1216,7 +1372,7 @@ function editSheet(id){
     if (submit.disabled) return;
     submit.disabled = true;
     try {
-      const changed = id && key !== originalKey;
+      const changed = lookupEdition && key !== originalKey;
       const version = changed ? await prepareVersion(requested) : null;
       if (!formIsOpen() || versionKey(identity()) !== key || (changed && !version)) return;
       await submitForm(p,version);
@@ -1301,7 +1457,17 @@ document.addEventListener("click", async e => {
     case "edit": editSheet(id); break;
     case "new": editSheet(null); break;
     case "rate": { const p = byId(id); if (p) { await act(() => Store.savePerfume(Object.assign({}, p, {rating:Number(v)}))); detailSheet(id); } break; }
-    case "remain": { const p = byId(id); if (p) { await act(() => Store.savePerfume(Object.assign({}, p, {remaining: p.remaining===v ? null : v}))); detailSheet(id); } break; }
+    case "remain":
+    case "stock-toggle": {
+      const p = byId(id);
+      if (!p) break;
+      const toggle = a === "stock-toggle";
+      const remaining = toggle ? (p.remaining === "empty" ? p.remainingBeforeEmpty ?? null : "empty") : (p.remaining === v ? null : v);
+      await act(() => Store.savePerfume(remainingUpdate(p,remaining)),
+        toggle ? (remaining === "empty" ? "已用完，將從推薦排除" : "已恢復推薦") : "");
+      if (!toggle || b.dataset.origin === "detail") detailSheet(id);
+      break;
+    }
     case "ffam": case "focc": case "fsea": b.setAttribute("aria-pressed", b.getAttribute("aria-pressed") !== "true"); break;
     case "del":
       if (delArm !== id) { delArm = id; b.textContent = "確定刪除？再點一次"; setTimeout(() => { if (delArm === id) { delArm = null; if (b.isConnected) b.textContent = "刪除"; } }, 3500); break; }
