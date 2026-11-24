@@ -1,5 +1,6 @@
 # 推上 main 就發布網站；發布前把 __APP_VERSION__ 換成「月/日 時:分 · commit」（台灣時間），
 # App 上方會顯示這個版號，也靠 version.json 判斷手機上的是不是最新版。
+# 分成 build（打包上傳）和 deploy（發布）兩段：上傳完成後才發布，避免發布時找不到檔案。
 name: Deploy site
 
 on:
@@ -17,11 +18,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - name: Stamp version
@@ -33,5 +31,13 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: .
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
