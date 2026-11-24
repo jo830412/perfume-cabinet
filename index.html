@@ -122,6 +122,9 @@ h2{font-size:13px;font-weight:500;color:var(--muted);letter-spacing:.08em;margin
 
 /* alt list */
 .alts{display:grid;gap:10px}
+.alt-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.alt-heading h2{margin:0}
+.batch-action{margin-left:auto;min-height:44px;padding:6px 12px}
 .alt{display:grid;grid-template-columns:6px auto minmax(0,1fr);gap:12px;align-items:center;background:var(--surface);border-radius:var(--r);padding:12px 12px 12px 0;border:0;text-align:left;width:100%}
 .alt .bar{align-self:stretch;border-radius:0 4px 4px 0;background:var(--c)}
 .alt .n{font-size:18px;font-weight:600;line-height:1.2;overflow-wrap:anywhere}
@@ -154,6 +157,9 @@ h2{font-size:13px;font-weight:500;color:var(--muted);letter-spacing:.08em;margin
 .day.blank{visibility:hidden}
 .day.future{opacity:.35}
 .stats{display:grid;gap:10px}
+.month-usage{display:grid;gap:14px}
+.month-usage .rank li span:last-child{white-space:nowrap}
+.month-usage .label{margin-bottom:2px}
 .rank{display:grid;gap:6px;margin:6px 0 0;padding:0;list-style:none}
 .rank li{display:flex;justify-content:space-between;gap:10px}
 .rank li span:first-child{min-width:0;overflow-wrap:anywhere}
@@ -175,6 +181,7 @@ body.sheet-open{position:fixed;left:0;right:0;width:100%;overflow:hidden}
 .catalog-results{display:grid;gap:5px}
 .catalog-choice{display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:44px;width:100%;border:1px solid var(--line);border-radius:10px;background:var(--bg);text-align:left;padding:8px 10px}
 .catalog-choice span{min-width:0;overflow-wrap:anywhere}
+.catalog-result-row{display:flex;align-items:center;gap:10px}
 .compare-selection{display:grid;gap:8px}
 .compare-selection p{margin:0;color:var(--muted);font-size:14px}
 .compare-selection .chip{width:fit-content;max-width:100%;min-height:44px;overflow-wrap:anywhere;text-align:left}
@@ -422,8 +429,15 @@ const TODAY = ymd(new Date());
 const S = {
   mode:"loading", perfumes:[], wearList:[],
   view:"today", q:"", fam:null, stock:"active", offset:0,
+  recommendationBatch:[], seenRecommendations:new Set(),
   calMonth: TODAY.slice(0,7), ctx:null
 };
+const RECOMMENDATION_BATCH_SIZE = 4;
+function resetRecommendationChoices(){
+  S.offset = 0;
+  S.recommendationBatch = [];
+  S.seenRecommendations.clear();
+}
 
 /* ---------- today context (per-device convenience) ---------- */
 function defaultCtx(){
@@ -443,7 +457,7 @@ function readWeatherHash(){
   const d = new Date();
   S.ctx = Object.assign({}, S.ctx, {temp, hum, rain, wet: (rain != null && rain >= 50) || (hum != null && hum >= 90),
     guessed:false, src:"apple", at:`${pad(d.getHours())}:${pad(d.getMinutes())}`});
-  saveCtx(); S.offset = 0;
+  saveCtx(); resetRecommendationChoices();
   return true;
 }
 
@@ -462,8 +476,10 @@ function applyWeather(){
   const w = todayWeather();
   if (!w) return;
   const {temp,rain,humidity} = weatherForOcc(w,S.ctx.occ);
-  S.ctx = Object.assign({}, S.ctx, {temp: Math.round(num(temp, S.ctx.temp)),
-    wet: num(rain,0) >= 50 || num(humidity,0) >= 90, guessed:!Number.isFinite(temp), src:"auto"});
+  const next = {temp:Math.round(num(temp,S.ctx.temp)),wet:num(rain,0) >= 50 || num(humidity,0) >= 90,
+    guessed:!Number.isFinite(temp),src:"auto"};
+  if (next.temp !== S.ctx.temp || next.wet !== S.ctx.wet) resetRecommendationChoices();
+  S.ctx = {...S.ctx,...next};
 }
 
 /* ---------- 資料：存在手機（localStorage），可同步到 Google 雲端硬碟 ---------- */
@@ -937,6 +953,19 @@ function recommend(today, ctx){
   }).sort((a,b) => b.score - a.score);
 }
 
+function recommendationOrder(recs){
+  const batch = recs.filter(row => S.recommendationBatch.includes(row.p.id));
+  const active = batch.length ? batch : recs;
+  const offset = active.length ? S.offset % active.length : 0;
+  return active.slice(offset).concat(active.slice(0,offset));
+}
+function nextRecommendationBatch(recs, seen, current){
+  const unseen = recs.filter(row => !seen.has(row.p.id));
+  const newCycle = !unseen.length;
+  const other = newCycle ? recs.filter(row => !current.includes(row.p.id)) : unseen;
+  return {ids:(other.length ? other : recs).slice(0,RECOMMENDATION_BATCH_SIZE).map(row => row.p.id),newCycle};
+}
+
 // 「其他選擇」的理由：寫出它和主推薦哪裡不一樣，三支盡量不重複
 function altReasons(main, alts){
   const used = new Set();
@@ -1100,10 +1129,11 @@ function renderToday(){
     el.innerHTML = html + '<div class="card empty-state">目前沒有可推薦的香水。到香水櫃更新剩量或新增香水。</div>';
     return;
   }
-  const offset = recs.length ? S.offset % recs.length : 0;
-  const ordered = worn ? recs : recs.slice(offset).concat(recs.slice(0,offset));
+  const ordered = worn ? recs : recommendationOrder(recs);
+  if (!worn) ordered.slice(0,RECOMMENDATION_BATCH_SIZE).forEach(row => S.seenRecommendations.add(row.p.id));
   const main = worn ? {p:worn, why:[]} : ordered[0];
-  const p = main.p, alts = ordered.filter(r => r.p.id !== p.id).slice(0,3);
+  const p = main.p, alts = ordered.filter(r => r.p.id !== p.id).slice(0,RECOMMENDATION_BATCH_SIZE-1);
+  const showBatch = !worn && recs.length > RECOMMENDATION_BATCH_SIZE;
   const spray = worn ? null : sprayAdvice(p, c);
   const altWhy = altReasons(main, alts);
   // 已記錄時顯示「今天以前」最後一次噴的時間，才不會和「已記錄」互相矛盾
@@ -1138,8 +1168,11 @@ function renderToday(){
       <div><span class="label">${worn ? "前一次噴" : "上次噴"}</span><b>${esc(prevText)}</b></div>
     </div>
   </article>`;
-  if (alts.length) html += `<h2>${worn ? "想換一支的話" : "其他選擇"}</h2>
-  <div class="alts">${alts.map((r,i) => `<button class="alt" data-act="open" data-id="${esc(r.p.id)}" style="--c:${famColor(r.p)}">
+  if (showBatch || alts.length) html += `<div class="alt-heading">
+    ${alts.length ? `<h2>${worn ? "想換一支的話" : "其他選擇"}</h2>` : ""}
+    ${showBatch ? '<button class="btn ghost batch-action" data-act="batch-shuffle">換一批</button>' : ""}
+  </div>`;
+  if (alts.length) html += `<div class="alts">${alts.map((r,i) => `<button class="alt" data-act="open" data-id="${esc(r.p.id)}" style="--c:${famColor(r.p)}">
       <span class="bar"></span>${photo(r.p, "ph-sm")}
       <span style="min-width:0"><span class="n">${esc(r.p.name)}</span><br><span class="s">${esc(altWhy[i])}</span></span>
     </button>`).join("")}</div>`;
@@ -1215,39 +1248,59 @@ window.addEventListener("resize", () => {
   renderShelfResults();
 });
 
+function monthWearStats(month){
+  const entries = S.wearList.filter(entry => typeof entry.date === "string" && entry.date.startsWith(month+"-"));
+  const perfumes = new Map(), families = new Map(), occasions = new Map();
+  const profiles = new Map(S.perfumes.map(p => [p.id,p]));
+  function count(group,key,label,date){
+    if (!key || !label) return;
+    if (!group.has(key)) group.set(key,{key,label,dates:new Set()});
+    group.get(key).dates.add(date);
+  }
+  for (const {date,perfumeId,occ} of entries) {
+    const p = profiles.get(perfumeId), family = p?.families?.[0] || p?.accords?.[0]?.[0];
+    count(perfumes,perfumeId,p?.name,date);
+    if (family) count(families,family,accName(family),date);
+    if (Object.hasOwn(OCC,occ)) count(occasions,occ,OCC[occ],date);
+  }
+  const ranked = group => [...group.values()].map(({key,label,dates}) => ({key,label,days:dates.size}))
+    .sort((a,b) => b.days-a.days || a.label.localeCompare(b.label,"zh-Hant"));
+  return {days:new Set(entries.map(entry => entry.date)).size,
+    perfumes:ranked(perfumes),families:ranked(families),occasions:ranked(occasions)};
+}
+
 function renderLog(){
   const el = $("#v-log");
   const [y, m] = S.calMonth.split("-").map(Number);
   const first = new Date(y, m-1, 1), dim = new Date(y, m, 0).getDate();
   let cal = WEEK.split("").map(d => `<div class="dow">${d}</div>`).join("");
   for (let i = 0; i < first.getDay(); i++) cal += `<div class="day blank"></div>`;
-  let monthCount = 0;
   for (let d = 1; d <= dim; d++) {
     const ds = `${y}-${pad(m)}-${pad(d)}`, entries = wearsOn(ds);
     const bottles = [...new Set(entries.map(w => w.perfumeId))].map(byId).filter(Boolean);
-    if (entries.length) monthCount++;
     const future = ds > TODAY;
     const extra = bottles.length > 1 ? `+${bottles.length - 1}` : entries.length > 1 ? `×${entries.length}` : "";
     cal += `<button class="day ${ds===TODAY?"is-today":""} ${future?"future":""}" ${future?"disabled":""} data-act="day" data-v="${ds}" aria-label="${m}月${d}日${bottles.length ? "，" + esc(bottles.map(p => p.name).join("、")) : ""}">
       <span class="dn">${d}</span>${bottles.length ? `<span class="cal-bottle">${photo(bottles[0], "ph-cal")}${extra ? `<span class="cal-more">${extra}</span>` : ""}</span>` : ""}</button>`;
   }
-  // stats（同一天同一支只算一次）
-  const since90 = ymd(new Date(Date.now() - 90*864e5));
-  const cnt = {}, seen = new Set();
-  S.wearList.forEach(({date,perfumeId}) => {
-    const key = perfumeId + "|" + date;
-    if (date >= since90 && !seen.has(key)) { seen.add(key); cnt[perfumeId] = (cnt[perfumeId]||0)+1; }
-  });
-  const top = Object.entries(cnt).filter(([id]) => byId(id)).sort((a,b) => b[1]-a[1]).slice(0,5);
+  const usage = monthWearStats(S.calMonth);
+  const summary = [["香水",usage.perfumes],["主要香調",usage.families],["場合",usage.occasions]];
   const {last} = lastWorn(null);
   const cold = S.perfumes.filter(p => isOwned(p) && p.remaining !== "empty").map(p => [p, last[p.id]]).sort((a,b) => (a[1]||"0") < (b[1]||"0") ? -1 : 1).slice(0,5);
   el.innerHTML = `<div class="card">
       <div class="cal-head"><button data-act="month" data-v="-1" aria-label="上個月">‹</button><b>${y} 年 ${m} 月</b><button data-act="month" data-v="1" aria-label="下個月">›</button></div>
       <div class="cal">${cal}</div>
-      <p class="small muted" style="margin:10px 0 0">這個月噴了 <b class="mono">${monthCount}</b> 天。點日期可以補記或修改。</p>
+      <p class="small muted" style="margin:10px 0 0">這個月噴了 <b class="mono">${usage.days}</b> 天。點日期可以補記或修改。</p>
     </div>
     <div class="stats">
-      <div class="card"><div class="label">近 90 天最常用</div>${top.length ? `<ol class="rank">${top.map(([id,n]) => `<li><span>${esc(byId(id).name)}</span><span class="mono">${n} 天</span></li>`).join("")}</ol>` : `<p class="small muted" style="margin:6px 0 0">還沒有紀錄。在「今日」按「今天噴這支」就會開始累積。</p>`}</div>
+      <div class="card month-usage" aria-label="${m} 月用香統計">
+        <strong>${m} 月最常用</strong>
+        ${usage.days ? summary.map(([label,items]) => `<section aria-label="${label}"><div class="label">${label}</div>
+          ${items.length ? `<ol class="rank">${items.slice(0,3).map(item =>
+            `<li><span>${esc(item.label)}</span><span class="mono">${item.days} 天</span></li>`).join("")}</ol>` :
+            '<div class="small muted">這個月還沒有這類資料。</div>'}</section>`).join("") :
+          '<div class="small muted">這個月還沒有使用紀錄。</div>'}
+      </div>
       <div class="card"><div class="label">冷落最久</div><ol class="rank">${cold.map(([p,d]) => `<li><span>${esc(p.name)}</span><span class="mono">${esc(sinceText(d))}</span></li>`).join("")}</ol></div>
     </div>`;
 }
@@ -1661,6 +1714,34 @@ const CATALOG_BRAND_ALIASES = {
 };
 const searchText = value => String(value ?? "").normalize("NFKD").toLowerCase().replace(/[\p{M}'’]/gu,"")
   .replace(/[^\p{L}\p{N}]+/gu," ").trim();
+const catalogQueryText = value => searchText(value)
+  .replace(/\b(extrait de parfum|eau de parfum|eau de toilette|eau de cologne)\b/g,term => catalogConc(term))
+  .replace(/([a-z])(\d)/g,"$1 $2").replace(/(\d)([a-z])/g,"$1 $2");
+function catalogSearchRequest(query){
+  const text = catalogQueryText(query), words = text.split(" ").filter(Boolean);
+  const concentrations = [...new Set(words.filter(word => Object.hasOwn(VERSION_CONCENTRATIONS,word)))];
+  return {text, terms:words.filter(word => !concentrations.includes(word)), concentrations};
+}
+function oneCatalogEdit(word, candidate){
+  if (!/^[a-z]{4,}$/.test(word) || !/^[a-z]+$/.test(candidate) || Math.abs(word.length-candidate.length) > 1) return false;
+  let index = 0;
+  while (index < word.length && word[index] === candidate[index]) index++;
+  const a = word.slice(index), b = candidate.slice(index);
+  if (a.length > b.length) return a.slice(1) === b;
+  if (b.length > a.length) return b.slice(1) === a;
+  return a.slice(1) === b.slice(1) ||
+    (a[0] === b[1] && a[1] === b[0] && a.slice(2) === b.slice(2));
+}
+function catalogMatchCost(request, fields){
+  const text = catalogQueryText(fields.join(" ")), words = text.split(" ");
+  let cost = 0;
+  for (const term of request.terms) {
+    if (/^\d+$/.test(term) ? words.includes(term) : text.includes(term)) continue;
+    if (cost || !words.some(word => oneCatalogEdit(term,word))) return Infinity;
+    cost++;
+  }
+  return cost;
+}
 const brandAlias = brand => Object.keys(CATALOG_BRAND_ALIASES).find(name => catalogText(name) === catalogText(brand));
 function matchesCatalog(query,...values){
   const haystack = searchText(values.join(" "));
@@ -1671,28 +1752,43 @@ function catalogSearchFields(p){
 }
 function searchLocalCatalog(query){
   const unique = new Map(), sources = new Set();
+  const request = catalogSearchRequest(query);
   const items = [...(Store.bundle?.perfumes || []), ...(Store.bundle?.variants || []), ...S.perfumes];
+  const matches = [];
   for (const p of items) {
-    if (!p.brand || !p.name || !matchesCatalog(query,...catalogSearchFields(p))) continue;
+    if (!p.brand || !p.name || request.concentrations.some(conc => catalogConc(p.conc) !== conc)) continue;
+    const cost = catalogMatchCost(request,catalogSearchFields(p));
+    if (Number.isFinite(cost)) matches.push({p,cost});
+  }
+  const exact = p => {
+    const brand = catalogQueryText(p.brand), conc = catalogConc(p.conc);
+    const names = [catalogQueryText(catalogName(p.name)), ...(p.aliases || []).map(catalogQueryText)];
+    return Number(names.some(name => [name, `${brand} ${name}`, `${name} ${conc}`, `${brand} ${name} ${conc}`].includes(request.text)));
+  };
+  matches.sort((a,b) => a.cost - b.cost || exact(b.p) - exact(a.p));
+  for (const {p} of matches) {
     const source = fragranticaId(p.source), key = versionKey(p);
     if ((source && sources.has(source)) || unique.has(key)) continue;
     unique.set(key,p);
     if (source) sources.add(source);
   }
-  const term = searchText(query);
-  const exact = p => {
-    const brand = searchText(p.brand), conc = searchText(p.conc);
-    const names = [catalogName(p.name), ...(p.aliases || []).map(searchText)];
-    return Number(names.some(name => [name, `${brand} ${name}`, `${name} ${conc}`, `${brand} ${name} ${conc}`].includes(term)));
-  };
-  const perfumes = [...unique.values()].sort((a,b) => exact(b) - exact(a));
+  const perfumes = [...unique.values()];
   const brands = [...new Set([...Object.keys(CATALOG_BRAND_ALIASES), ...items.map(p => p.brand).filter(Boolean)])]
-    .filter(brand => matchesCatalog(query,brand,...(CATALOG_BRAND_ALIASES[brandAlias(brand)] || [])));
+    .filter(brand => !request.concentrations.length &&
+      Number.isFinite(catalogMatchCost(request,[brand,...(CATALOG_BRAND_ALIASES[brandAlias(brand)] || [])])));
   return {brands,perfumes};
 }
 function remoteCatalogQuery(query){
   const alias = Object.entries(CATALOG_BRAND_ALIASES).find(([,names]) => names.some(name => searchText(name) === searchText(query)));
   return alias ? alias[0] : query;
+}
+function remoteSearchPhrase(query){
+  const request = catalogSearchRequest(query);
+  let words = " " + request.terms.join(" ") + " ";
+  for (const [brand,aliases] of Object.entries(CATALOG_BRAND_ALIASES)) {
+    for (const alias of aliases) words = words.replace(` ${catalogQueryText(alias)} `,` ${brand} `);
+  }
+  return words.trim() || request.text;
 }
 function matchingBottle(p){
   if (!p.brand || !p.name) return null;
@@ -1717,7 +1813,7 @@ function duplicateNotice(p){
 async function loadCatalogChoice(choice){
   if (choice.local) return choice.local;
   const {brand,name,term} = choice;
-  const draft = {brand,name};
+  const draft = {brand,name,conc:choice.conc || ""};
   try {
     const answer = await readScento("/perfumes/"+encodeURIComponent(term || name));
     const {detail} = answer;
@@ -1725,7 +1821,8 @@ async function loadCatalogChoice(choice){
     const selected = catalogConc(detail.concentration);
     const conc = selected === "parfum" ? "Parfum" : selected === "extrait" ? "Extrait" : selected.toUpperCase();
     const namedConc = name && searchText(name).match(VERSION_SUFFIX)?.[1];
-    if (namedConc && catalogConc(namedConc) !== selected) return draft;
+    if ((namedConc && catalogConc(namedConc) !== selected) ||
+        choice.concentrations?.some(concentration => concentration !== selected)) return draft;
     return scentoProfile(answer,{brand,name,conc}) || {...draft,conc};
   } catch {
     return draft;
@@ -1739,19 +1836,29 @@ function wireCatalogSearch(formIsOpen){
   let timer, generation = 0, choices = [];
   function show(query,online=[], message=""){
     const local = searchLocalCatalog(query), brands = new Map(local.brands.map(brand => [catalogText(brand),brand]));
+    const request = catalogSearchRequest(query);
     const perfumes = local.perfumes.map(p => ({name:p.name,brand:p.brand,conc:p.conc,local:p}));
-    for (const entry of online) {
-      if (entry.kind === "house" && entry.name) brands.set(catalogText(entry.name),entry.name);
+    const ranked = online.map(entry => ({entry,cost:catalogMatchCost(request,[entry.name,entry.house,
+      ...(CATALOG_BRAND_ALIASES[brandAlias(entry.house || entry.name)] || [])])}))
+      .filter(result => Number.isFinite(result.cost)).sort((a,b) => a.cost-b.cost);
+    for (const {entry} of ranked) {
+      if (entry.kind === "house" && entry.name && !request.concentrations.length) brands.set(catalogText(entry.name),entry.name);
       if (entry.kind !== "perfume" || !entry.name || !entry.house) continue;
       const suffix = searchText(entry.name).match(VERSION_SUFFIX)?.[1];
+      const knownConc = catalogConc(entry.concentration || suffix);
+      if (request.concentrations.length > 1 ||
+          (knownConc && request.concentrations.some(conc => knownConc !== conc))) continue;
       const duplicate = perfumes.some(p => catalogText(p.brand) === catalogText(entry.house) &&
-        catalogName(p.name) === catalogName(entry.name) && (!suffix || catalogConc(p.conc) === catalogConc(suffix)));
+        catalogName(p.name) === catalogName(entry.name) && (!knownConc || catalogConc(p.conc) === knownConc));
       if (!duplicate) perfumes.push({name:entry.name,brand:entry.house,
+        conc:knownConc === "extrait" ? "Extrait" : knownConc === "parfum" ? "Parfum" : knownConc.toUpperCase(),
+        concentrations:request.concentrations,
         term:entry.page?.match(/^https:\/\/www\.scento\.com\/perfumes\/([a-z\d-]+)$/i)?.[1]});
     }
     choices = [...[...brands.values()].slice(0,2).map(brand => ({brand})), ...perfumes.slice(0,6)];
-    results.innerHTML = choices.map(({brand,name,conc},i) => `<button type="button" class="catalog-choice" data-catalog-choice="${i}">
-      <span>${esc(name || brand)}${name ? `<br><span class="small muted">${esc([brand,conc].filter(Boolean).join(" · "))}</span>` : ""}</span>
+    results.innerHTML = choices.map(({brand,name,conc,local},i) => `<button type="button" class="catalog-choice" data-catalog-choice="${i}">
+      <span class="catalog-result-row">${local && imgUrl(local) ? photo(local,"ph-sm") : ""}
+        <span>${esc(name || brand)}${name ? `<br><span class="small muted">${esc([brand,conc || "濃度待確認"].join(" · "))}</span>` : ""}</span></span>
       ${name ? "" : '<span class="small muted">選用品牌</span>'}
     </button>`).join("");
     status.textContent = message || (choices.length ? "" : "找不到相符的香水。填寫品牌與名稱即可儲存。");
@@ -1765,7 +1872,7 @@ function wireCatalogSearch(formIsOpen){
       choices = []; results.innerHTML = ""; status.hidden = true;
       return;
     }
-    const phrase = remoteCatalogQuery(query);
+    const phrase = remoteSearchPhrase(query);
     const key = searchText(phrase);
     if (cache.has(key)) {
       show(query,cache.get(key));
@@ -1776,7 +1883,7 @@ function wireCatalogSearch(formIsOpen){
     timer = setTimeout(async () => {
       try {
         const response = await readScento("/search?"+new URLSearchParams({q:phrase,kind:"any"}));
-        const online = (response.detail?.matches || []).filter(p => matchesCatalog(phrase,p.name,p.house));
+        const online = Array.isArray(response.detail?.matches) ? response.detail.matches : [];
         cache.set(key,online);
         if (formIsOpen() && generation === requested) show(query,online);
       } catch {
@@ -2134,16 +2241,29 @@ document.addEventListener("click", async e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
   const a = b.dataset.act, v = b.dataset.v, id = b.dataset.id;
   switch (a) {
-    case "temp": S.ctx.temp = Math.max(-5, Math.min(42, S.ctx.temp + Number(v))); S.ctx.guessed = false; S.ctx.src = "manual"; S.ctx.manual = true; saveCtx(); S.offset = 0; render(); break;
-    case "wet": S.ctx.wet = !S.ctx.wet; S.ctx.src = "manual"; S.ctx.manual = true; saveCtx(); S.offset = 0; render(); break;
-    case "occ": S.ctx.occ = v; applyWeather(); saveCtx(); S.offset = 0; render(); break;
-    case "autowx": S.ctx.manual = false; S.ctx.src = null; applyWeather(); saveCtx(); S.offset = 0; render(); break;
-    case "shuffle":
-      S.offset += 1;
-      renderToday();
-      if ($(".pick").getBoundingClientRect().top < 0) $(".pick").scrollIntoView({block:"start"});
-      if (e.detail === 0) $('[data-act="shuffle"]')?.focus({preventScroll:true});
+    case "temp": S.ctx.temp = Math.max(-5, Math.min(42, S.ctx.temp + Number(v))); S.ctx.guessed = false; S.ctx.src = "manual"; S.ctx.manual = true; saveCtx(); resetRecommendationChoices(); render(); break;
+    case "wet": S.ctx.wet = !S.ctx.wet; S.ctx.src = "manual"; S.ctx.manual = true; saveCtx(); resetRecommendationChoices(); render(); break;
+    case "occ":
+      if (S.ctx.occ !== v) resetRecommendationChoices();
+      S.ctx.occ = v; applyWeather(); saveCtx(); render();
       break;
+    case "autowx": S.ctx.manual = false; S.ctx.src = null; applyWeather(); saveCtx(); resetRecommendationChoices(); render(); break;
+    case "shuffle":
+    case "batch-shuffle": {
+      if (a === "shuffle") S.offset++;
+      else {
+        const recs = recommend(TODAY,S.ctx);
+        const current = recommendationOrder(recs).slice(0,RECOMMENDATION_BATCH_SIZE).map(row => row.p.id);
+        const next = nextRecommendationBatch(recs,S.seenRecommendations,current);
+        if (next.newCycle) S.seenRecommendations.clear();
+        S.recommendationBatch = next.ids;
+        S.offset = 0;
+      }
+      renderToday();
+      if ($(".pick")?.getBoundingClientRect().top < 0) $(".pick").scrollIntoView({block:"start"});
+      if (e.detail === 0) $(`[data-act="${a}"]`)?.focus({preventScroll:true});
+      break;
+    }
     case "sync": if (Sync.valid()) Sync.run(); else Sync.connect(); break;
     case "gd-stop": Sync.stop(); break;
     case "unphoto": { const p = byId(id); if (p) { const q = Object.assign({}, p); delete q.photo; await Store.savePerfume(q); detailSheet(id); toast("已改回原本圖片"); } break; }
