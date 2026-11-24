@@ -404,6 +404,7 @@ const STOCK_SEG = {active:"現有",empty:"用完",all:"全部",wish:"想買",tri
 // own：沒有值 = 我有的；"wish" = 想買；"tried" = 試香過（後兩種不進推薦和使用紀錄）
 const OWN_TYPES = {"":"我有的",wish:"想買",tried:"試香過"};
 const isOwned = p => !p.own;
+const availableToWear = p => !!p && isOwned(p) && p.remaining !== "empty";
 const LKEY = "perfume-cabinet-v1";
 
 const $ = s => document.querySelector(s);
@@ -462,7 +463,7 @@ function applyWeather(){
   if (!w) return;
   const {temp,rain,humidity} = weatherForOcc(w,S.ctx.occ);
   S.ctx = Object.assign({}, S.ctx, {temp: Math.round(num(temp, S.ctx.temp)),
-    wet: num(rain,0) >= 50 || num(humidity,0) >= 90, guessed:false, src:"auto"});
+    wet: num(rain,0) >= 50 || num(humidity,0) >= 90, guessed:!Number.isFinite(temp), src:"auto"});
 }
 
 /* ---------- 資料：存在手機（localStorage），可同步到 Google 雲端硬碟 ---------- */
@@ -471,6 +472,25 @@ const GOOGLE_CLIENT_ID = "288072368244-huo1rnfas2s4rovnab1cs91hc6n6e3lt.apps.goo
 const USER_FIELDS = ["rating","remaining","remainingBeforeEmpty","memo","row","col","occ","photo","fragranticaRating","own","triedOn"];
 // Fragrantica 完整資料（網站 perfumes.json 的 details，以 Fragrantica 網址 ID 對應）會補進這些欄位
 const DETAIL_FIELDS = ["accords","families","seasons","strength","longevity","votes","notes"];
+const SEASON_DATA_VERSION = 1;
+function normalizeLegacySeasons(p){
+  const {seasons, catalogSource} = p;
+  if (!seasons || p.seasonDataVersion || p.votes || p.detailsVer) return p;
+  const keys = Object.keys(SEASON);
+  let defaults = [];
+  if (String(catalogSource).startsWith("https://www.scento.com/") &&
+      keys.every(k => seasons[k] === 40 || seasons[k] === 85) && keys.some(k => seasons[k] === 85)) {
+    // 舊 Scento 匯入會將整組未提供的欄位補成 40。
+    const groups = [["spring","summer","fall","winter"], ["day","night"]];
+    defaults = groups.filter(group => group.every(key => seasons[key] === 40)).flat();
+  } else if (!p.source && !catalogSource && keys.every(k => [40,50,85].includes(seasons[k]))) {
+    // 舊手動表單將空白補成 50，手動取消的項目則是 40。
+    defaults = keys.filter(k => seasons[k] === 50);
+  }
+  if (!defaults.length) return p;
+  const known = Object.fromEntries(Object.entries(seasons).filter(([key]) => !defaults.includes(key)));
+  return {...p,seasons:Object.keys(known).length ? known : undefined,seasonDataVersion:SEASON_DATA_VERSION};
+}
 const Store = {
   bundle: null,
   data: {perfumes:{}, wears:{}},
@@ -488,7 +508,7 @@ const Store = {
   normalize(x){
     const d = {perfumes:{}, wears:{}};
     const ps = Array.isArray(x.perfumes) ? x.perfumes : Object.values(x.perfumes || {});
-    ps.forEach(p => { if (p && p.id) d.perfumes[p.id] = Object.assign({t:0}, p); });
+    ps.forEach(p => { if (p && p.id) d.perfumes[p.id] = Object.assign({t:0}, normalizeLegacySeasons(p)); });
     // 使用紀錄一天可以有多筆；舊資料一天一筆、以日期當代號，照樣沿用
     const ws = Array.isArray(x.wears) ? x.wears : Object.entries(x.wears || {}).map(([key,w]) => Object.assign({id:key}, w));
     ws.forEach(w => { if (w && w.date) { const id = w.id || w.date; d.wears[id] = Object.assign({t:0}, w, {id}); } });
@@ -841,14 +861,17 @@ function sprayAdvice(p, ctx){
   }
   if (strength >= 4.5) return {range:"1–2", reason:"擴散很強，先從少量試起"};
 
-  // 用實際採用的體感溫度。無預報時的月平均氣溫不觸發炎熱調整。
-  const hot = ctx.guessed === false && Number.isFinite(ctx.temp) && ctx.temp >= 30;
-  if (hot) {
+  // 月平均氣溫只供選香參考，噴量加減以取得的天氣資料為準。
+  const measuredTemp = ctx.guessed === false && Number.isFinite(ctx.temp) ? ctx.temp : null;
+  if (measuredTemp !== null && measuredTemp >= 30) {
     return strength >= 4 ? {range:"1–2", reason:"體感較熱，這支擴散較強"} :
       {range:"2–3", reason:"體感較熱，先從 2 下開始"};
   }
   const light = strength <= 2.5;
-  if (ctx.occ === "sport" && light) return {range:"3–4", reason:"擴散較柔和，戶外可稍加量"};
+  if (ctx.occ === "sport" && light) {
+    return measuredTemp === null ? {range:"2–3", reason:"體感溫度未確認，先從 2 下開始"} :
+      {range:"3–4", reason:"擴散較柔和，戶外可稍加量"};
+  }
   const diffusion = strength >= 4 ? "較強" : light ? "較柔和" : "適中";
   return {range:"2–3", reason:`擴散${diffusion}，先從 2 下開始`};
 }
@@ -857,7 +880,7 @@ function recommend(today, ctx){
   const weights = Object.entries(seasonWeights(today, t));
   const totalWeight = weights.reduce((sum,[,weight]) => sum + weight,0);
   const suitability = value => Math.max(0,Math.min(100,num(value,NEUTRAL_SUITABILITY)));
-  return S.perfumes.filter(p => isOwned(p) && p.remaining !== "empty").map(p => {
+  return S.perfumes.filter(availableToWear).map(p => {
     let s = 0; const why = [];
     const st = num(p.strength, 3);
     const sea = p.seasons;
@@ -917,22 +940,22 @@ function recommend(today, ctx){
 // 「其他選擇」的理由：寫出它和主推薦哪裡不一樣，三支盡量不重複
 function altReasons(main, alts){
   const used = new Set();
-  const mp = profile(main.p) || {fresh:0, heavy:0}, mf = main.p.families || [];
+  const mp = profile(main.p), mf = main.p.families || [];
   return alts.map(r => {
-    const p = r.p, pp = profile(p) || {fresh:0, heavy:0}, options = [];
-    if (pp.fresh - mp.fresh >= .2) options.push("比主推薦更清爽");
-    if (pp.heavy - mp.heavy >= .2) options.push("比主推薦更溫暖厚重");
+    const p = r.p, pp = profile(p), options = [];
+    if (pp && mp && pp.fresh - mp.fresh >= .2) options.push("比主推薦更清爽");
+    if (pp && mp && pp.heavy - mp.heavy >= .2) options.push("比主推薦更溫暖厚重");
     const fam = (p.families || []).find(f => !mf.includes(f));
-    if (fam) options.push(`換個口味：${accName(fam)}調`);
+    if (fam) options.push(`可試試${accName(fam)}調`);
     const dl = num(p.longevity, NaN) - num(main.p.longevity, NaN);
     if (dl >= 1) options.push("留香比較久");
-    if (dl <= -1) options.push("比較輕盈，不會留太久");
+    if (dl <= -1) options.push("留香時間較短");
     const ds = num(p.strength, NaN) - num(main.p.strength, NaN);
     if (ds >= 1) options.push("擴散比較強，存在感高");
-    if (ds <= -1) options.push("比較低調，適合近距離");
+    if (ds <= -1) options.push("擴散較低調");
     if (num(p.rating,0) >= 4 && num(p.rating,0) > num(main.p.rating,0)) options.push("你評分比較高的愛用款");
     options.push(...r.why.filter(w => !w.startsWith("綜合今天")));
-    const pick = options.find(o => !used.has(o)) || "同樣適合今天的天氣";
+    const pick = options.find(o => !used.has(o)) || "另一個選擇";
     used.add(pick);
     return pick;
   });
@@ -1039,7 +1062,7 @@ function renderWeather(){
   const w = todayWeather(), c = S.ctx;
   const open = $("#weather-details")?.open ? " open" : "";
   const reading = w ? weatherForOcc(w,c.occ) : null;
-  const tempLabel = reading?.label || "氣溫";
+  const tempLabel = c.guessed ? "估算氣溫" : reading?.label || "氣溫";
   const percent = value => Number.isFinite(value) ? value+"%" : "—";
   // 收起時就看得到：溫度 · 天氣 · 降雨機率 · 鄉鎮
   const town = w ? String(w.place).replace(/^.{2,3}[縣市](?=.)/, "") : c.src === "apple" ? "Apple 天氣" : "台北氣溫估計";
@@ -1103,7 +1126,7 @@ function renderToday(){
     ${spray ? `<div class="spray-advice"><b>建議噴 ${spray.range} 下</b><span>${esc(spray.reason)}</span></div>` : ""}
     <div class="actions today-actions">
       ${worn ? `<span class="done-badge">✓ 已記錄${p.remaining === "empty" ? " · 已用完" : ""}</span>
-               <button class="btn primary" data-act="wear" data-id="${esc(p.id)}">補香</button>
+               ${availableToWear(p) ? `<button class="btn primary" data-act="wear" data-id="${esc(p.id)}">補香</button>` : ""}
                <button class="btn ghost" data-act="open" data-id="${esc(p.id)}">詳情</button>`
              : `<button class="btn primary" data-act="wear" data-id="${esc(p.id)}">今天噴這支</button>${alts.length ? '<button class="btn ghost" data-act="shuffle">換一支</button>' : ""}<button class="btn ghost" data-act="open" data-id="${esc(p.id)}">詳情</button>`}
     </div>
@@ -1418,10 +1441,11 @@ function detailSheet(id){
   const {last, count} = lastWorn(null);
   const todayCount = wearsOn(TODAY).filter(w => w.perfumeId === id).length;
   const score = communityScore(p);
+  const ratedPeriods = Object.entries(SEASON).filter(([key]) => Number.isFinite(p.seasons?.[key]));
   const compare = `<button class="btn ghost" data-act="compare" data-id="${esc(id)}">比較</button>`;
   const stars = `<div><div class="label">${isOwned(p) ? "我的評分" : "我的印象"}</div><div class="stars">${[1,2,3,4,5].map(n => `<button class="${num(p.rating,0)>=n?"on":""}" data-act="rate" data-id="${esc(id)}" data-v="${n}" aria-pressed="${p.rating===n}" aria-label="${n} 星">★</button>`).join("")}</div></div>`;
   const controls = isOwned(p) ? `<div class="actions">
-        <button class="btn primary" data-act="wear" data-id="${esc(id)}">${todayCount ? "補香（再記一次）" : wearsOn(TODAY).length ? "今天也噴這支" : "今天噴這支"}</button>
+        ${availableToWear(p) ? `<button class="btn primary" data-act="wear" data-id="${esc(id)}">${todayCount ? "補香（再記一次）" : wearsOn(TODAY).length ? "今天也噴這支" : "今天噴這支"}</button>` : ""}
         <button class="btn ghost" data-act="edit" data-id="${esc(id)}">編輯</button>
         ${compare}
       </div>
@@ -1453,9 +1477,9 @@ function detailSheet(id){
     <div class="detail-controls">${controls}</div>
     ${!isOwned(p) && p.memo ? `<div class="note-list"><span class="label">心得</span><span>${esc(p.memo)}</span></div>` : ""}
     ${noteList(p.notes)}
-    ${p.seasons || p.accords?.length ? `<div class="charts">
-      ${p.seasons ? `<div><div class="label">季節與時段適用度</div><div class="seabars">${Object.entries(SEASON).map(([k,l]) =>
-          `<div class="sb"><span class="st"><i style="height:${num(p.seasons[k],0)}%"></i></span><span>${l}</span></div>`).join("")}</div></div>` : ""}
+    ${ratedPeriods.length || p.accords?.length ? `<div class="charts">
+      ${ratedPeriods.length ? `<div><div class="label">季節與時段適用度</div><div class="seabars">${ratedPeriods.map(([k,l]) =>
+          `<div class="sb"><span class="st"><i style="height:${p.seasons[k]}%"></i></span><span>${l}</span></div>`).join("")}</div></div>` : ""}
       ${(p.accords && p.accords.length) ? `<div><div class="label">主要香調</div><div class="accbars">${p.accords.slice(0,6).map(([k,v]) =>
           `<div class="ab"><span>${esc(accName(k))}</span><span class="at"><i style="width:${num(v,0)}%;background:${accColor(k)}"></i></span></div>`).join("")}</div></div>` : ""}
       ${isOwned(p) ? `<div class="facts" style="margin-top:0">
@@ -1573,13 +1597,12 @@ function scentoProfile(answer,requested){
   const url = answer.scento_page?.url;
   const profile = {brand:requested.brand,name:d.name,conc:requested.conc,notes,
     catalogSource:/^https:\/\/www\.scento\.com\//.test(url || "") ? url : "https://www.scento.com/developers/perfume-api"};
-  // 適合季節與時段：Scento 列出的給 85，沒列的給 40（Fragrantica 網友投票補上後會被取代）
-  const seasons = (d.wears?.seasons || []).map(s => s === "autumn" ? "fall" : s);
-  const hours = d.wears?.hours || [];
-  if (seasons.length || hours.length) profile.seasons = {
-    spring: seasons.includes("spring") ? 85 : 40, summer: seasons.includes("summer") ? 85 : 40,
-    fall: seasons.includes("fall") ? 85 : 40, winter: seasons.includes("winter") ? 85 : 40,
-    day: hours.includes("day") ? 85 : 40, night: hours.some(h => h === "evening" || h === "night") ? 85 : 40};
+  // Scento 列出推薦的季節與時段，其餘欄位留空。
+  const seasons = Array.isArray(d.wears?.seasons) ? d.wears.seasons.map(s => s === "autumn" ? "fall" : s) : [];
+  const hours = Array.isArray(d.wears?.hours) ? d.wears.hours : [];
+  const known = Object.keys(SEASON).filter(key => key === "day" ? hours.includes("day") :
+    key === "night" ? hours.includes("night") || hours.includes("evening") : seasons.includes(key));
+  if (known.length) profile.seasons = Object.fromEntries(known.map(key => [key,85]));
   const families = [...new Set((d.character_words || []).map(w => SCENTO_WORDS[String(w).toLowerCase()]).filter(Boolean))].slice(0,3);
   if (families.length) { profile.families = families; profile.accords = families.map((k,i) => [k, 100 - i*15]); }
   return profile;
@@ -1977,17 +2000,18 @@ async function submitForm(orig,version){
   const families = oldAccords.length
     ? [...keptAccords.map(([key]) => key), ...selected.filter(key => !weightedKeys.includes(key))].slice(0,3)
     : selected;
-  // 季節勾選狀態沒變就保留原本的投票數字。
-  const seaOn = picked("#f-sea"), os = orig.seasons || {};
-  const seasons = orig.seasons || seaOn.length ? Object.fromEntries(Object.keys(SEASON).map(k => {
-    const was = num(os[k], 50), on = seaOn.includes(k);
-    return [k, on ? (was >= 70 ? was : 85) : (was < 70 ? was : 40)];
-  })) : undefined;
+  // 只更新使用者變更勾選狀態的季節或時段。
+  const seaOn = new Set(picked("#f-sea")), seasons = {...orig.seasons};
+  for (const key of Object.keys(SEASON)) {
+    const wasOn = num(seasons[key],0) >= NEUTRAL_SUITABILITY, on = seaOn.has(key);
+    if (on !== wasOn) seasons[key] = on ? 85 : 40;
+  }
   const noteEntries = NOTE_FIELDS.map(([key,label]) => [label,v("#f-note-"+key)]).filter(([,value]) => value);
   const notes = noteEntries.length === 1 && noteEntries[0][0] === "整體香調" ? noteEntries[0][1] :
     noteEntries.map(([label,value]) => label + "：" + value).join("｜");
   const p = Object.assign({}, orig, {id, brand, name, conc:v("#f-conc"), notes,
-    accords:keptAccords, families, seasons, occ:picked("#f-occ"),
+    accords:keptAccords, families, seasons:Object.keys(seasons).length ? seasons : undefined,
+    seasonDataVersion:SEASON_DATA_VERSION, occ:picked("#f-occ"),
     strength:n("#f-str"), longevity:n("#f-lon"), fragranticaRating:n("#f-score"),
     memo:v("#f-memo"), source:v("#f-src")});
   const own = document.querySelector("#f-own .chip[aria-pressed='true']")?.dataset.v || "";
@@ -2132,11 +2156,16 @@ document.addEventListener("click", async e => {
       break;
     }
     case "wear": {
+      const p = byId(id);
+      if (!availableToWear(p)) {
+        toast(p?.remaining === "empty" ? "這支已用完，補貨後可再記錄" : "這支目前無法記錄");
+        break;
+      }
       if (Sync.on && !Sync.valid()) Sync.connect(); // 順便取得同步授權（要在點擊當下）
-      const p = byId(id); closeSheet();
+      closeSheet();
       const refill = wearsOn(TODAY).some(w => w.perfumeId === id);
       await act(() => Store.addWear({date:TODAY, time:nowTime(), perfumeId:id, occ:S.ctx.occ, temp:S.ctx.temp, wet:!!S.ctx.wet}),
-        refill ? `已記錄補香：${p ? p.name : ""}` : `已記錄：今天噴 ${p ? p.name : ""}`);
+        refill ? `已記錄補香：${p.name}` : `已記錄：今天噴 ${p.name}`);
       if (S.view !== "today") location.hash = "today";
       break;
     }
