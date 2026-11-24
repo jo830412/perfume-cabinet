@@ -311,6 +311,17 @@ html,body{margin:0}
 .bottle.is-empty{opacity:.45}
 .today-tag{position:absolute;top:0;right:2px;z-index:1;font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;background:var(--accent);color:var(--accent-ink)}
 .ph-shelf{width:100%;max-width:84px;height:112px}
+/* 舊瓶照保留原圖，用裁切區的寬高和底部留白對齊層架。 */
+.ph-shelf:has(> img[data-cutout]){display:block;position:relative}
+.ph-shelf img[data-cutout]{
+  position:absolute;left:50%;bottom:1px;width:auto;height:auto;
+  max-width:calc((100% - 2px) / var(--outline-width));
+  max-height:calc((100% - 2px) / var(--outline-height));
+  transform:translate(var(--outline-center,-50%),var(--outline-foot))
+}
+.ph-shelf img[data-cutout="purpose-edp"]{--outline-width:.265;--outline-height:.529;--outline-center:-52.05%;--outline-foot:24.6%}
+.ph-shelf img[data-cutout="purpose-50"]{--outline-width:.27;--outline-height:.534;--outline-foot:24.8%}
+.ph-shelf img[data-cutout="aventus-edp"]{--outline-width:.338;--outline-height:.625;--outline-foot:10.6%}
 .plank{height:14px;margin:0 -2px;border-radius:2px;
   background:repeating-linear-gradient(92deg,transparent 0 23px,rgba(0,0,0,.07) 23px 25px,transparent 25px 61px,rgba(255,255,255,.06) 61px 62px),
     linear-gradient(180deg,var(--wood-hi) 0 3px,var(--wood) 3px 10px,var(--wood-lo) 10px);
