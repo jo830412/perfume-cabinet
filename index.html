@@ -1278,6 +1278,7 @@ function detailSheet(id){
         <button class="btn primary" data-act="own" data-id="${esc(id)}">買到了，加入香水櫃</button>
         ${p.own === "wish" ? `<button class="btn ghost" data-act="tried" data-id="${esc(id)}">已經試香</button>` : ""}
         <button class="btn ghost" data-act="edit" data-id="${esc(id)}">編輯</button>
+        ${p.own === "tried" ? `<button class="btn ghost danger" data-act="del" data-id="${esc(id)}">刪除試香</button>` : ""}
       </div>
       ${stars}
       ${similarOwned(p)}`;
@@ -1930,6 +1931,22 @@ function editDaySheet(date, wearId = null){
 
 /* ---------- events ---------- */
 let delArm = null, importArm = null;
+function confirmDelete(button, message){
+  if (delArm?.button === button) {
+    delArm = null;
+    return true;
+  }
+  if (delArm?.button.isConnected) delArm.button.textContent = delArm.label;
+  const armed = {button,label:button.textContent};
+  delArm = armed;
+  button.textContent = message;
+  setTimeout(() => {
+    if (delArm !== armed) return;
+    delArm = null;
+    if (button.isConnected) button.textContent = armed.label;
+  }, 3500);
+  return false;
+}
 document.addEventListener("click", async e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
   const a = b.dataset.act, v = b.dataset.v, id = b.dataset.id;
@@ -1966,8 +1983,11 @@ document.addEventListener("click", async e => {
     }
     case "edit-wear": editDaySheet(v, id); break;
     case "del-wear":
-      if (delArm !== id) { delArm = id; b.textContent = "確定刪除？"; setTimeout(() => { if (delArm === id) { delArm = null; if (b.isConnected) b.textContent = "刪除"; } }, 3500); break; }
-      delArm = null; await act(() => Store.deleteWear(id), "已刪除這筆紀錄"); daySheet(v); break;
+      if (confirmDelete(b,"確定刪除？")) {
+        await act(() => Store.deleteWear(id), "已刪除這筆紀錄");
+        daySheet(v);
+      }
+      break;
     case "own": {
       const p = byId(id); if (!p) break;
       const q = Object.assign({}, p, {remaining:"full"}); delete q.own;
@@ -2009,9 +2029,13 @@ document.addEventListener("click", async e => {
       document.querySelectorAll("#f-own .chip").forEach(chip => chip.setAttribute("aria-pressed", chip === b));
       $("#f-tried-field").hidden = v !== "tried";
       break;
-    case "del":
-      if (delArm !== id) { delArm = id; b.textContent = "確定刪除？再點一次"; setTimeout(() => { if (delArm === id) { delArm = null; if (b.isConnected) b.textContent = "刪除"; } }, 3500); break; }
-      delArm = null; closeSheet(); await act(() => Store.deletePerfume(id), "已刪除"); break;
+    case "del": {
+      const p = byId(id);
+      if (!p || !confirmDelete(b,"確定刪除？再點一次")) break;
+      closeSheet();
+      await act(() => Store.deletePerfume(id), p.own === "tried" ? "已刪除試香紀錄" : "已刪除");
+      break;
+    }
     case "fam":
       S.fam = v || null;
       if (!S.fam) S.famOpen = false;
