@@ -172,6 +172,27 @@ body.sheet-open{position:fixed;left:0;right:0;width:100%;overflow:hidden}
 .catalog-results{display:grid;gap:5px}
 .catalog-choice{display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:44px;width:100%;border:1px solid var(--line);border-radius:10px;background:var(--bg);text-align:left;padding:8px 10px}
 .catalog-choice span{min-width:0;overflow-wrap:anywhere}
+.compare-selection{display:grid;gap:8px}
+.compare-selection p{margin:0;color:var(--muted);font-size:14px}
+.compare-selection .chip{width:fit-content;max-width:100%;min-height:44px;overflow-wrap:anywhere;text-align:left}
+.compare-search{width:100%;font-size:16px}
+.compare-filters{grid-template-columns:repeat(4,minmax(0,1fr))}
+.compare-filters button{place-items:center}
+.compare-option{justify-content:flex-start}
+.compare-option .compare-choice-text{flex:1}
+.compare-option[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.compare-option[aria-pressed="true"] .compare-check{color:var(--accent);font-weight:700}
+.compare-table{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:4px 0;font-size:14px;overflow-wrap:anywhere}
+.compare-table thead th{vertical-align:top;padding:10px 6px;background:var(--bg);border-radius:10px 10px 0 0}
+.compare-table .compare-photo{width:64px;height:86px;margin:0 auto 8px}
+.compare-table thead .compare-brand{display:block;font-weight:400}
+.compare-name{display:block;margin-top:4px;line-height:1.3}
+.compare-table thead td{padding:0 6px 8px;text-align:center;background:var(--bg);border-radius:0 0 10px 10px}
+.compare-table thead .chip{min-height:44px;font-size:13px}
+.compare-table tbody th{text-align:left;padding:12px 4px 4px;font-size:13px;font-weight:600;color:var(--muted)}
+.compare-table tbody td{vertical-align:top;padding:8px;background:var(--bg);border-radius:8px;white-space:pre-line}
+.compare-table .compare-memo{display:block;margin-top:4px}
+.compare-table .compare-score{font-weight:650;color:var(--amber)}
 .detail-profile{background:var(--bg)}
 .charts{display:grid;gap:14px;padding:14px 12px;border-radius:12px;background:var(--bg)}
 .charts .facts{padding-top:12px}
@@ -907,15 +928,18 @@ function imgUrl(p){
   if (id) return `https://fimgs.net/mdimg/perfume/375x500.${id}.jpg`;
   return /^https:\/\/armaf\.com\/cdn\/shop\/files\//.test(p.catalogImage || "") ? p.catalogImage : null;
 }
-function communityScore(p){
+function formattedCommunityScore(p){
   const score = num(p.fragranticaRating, Store.bundle?.ratings?.[fragranticaId(p.source)]);
-  return Number.isFinite(score) && score >= 1 && score <= 5
-    ? `<span class="community-score">Fragrantica <strong>${score.toFixed(2)}</strong><span>/ 5</span></span>` : "";
+  return Number.isFinite(score) && score >= 1 && score <= 5 ? score.toFixed(2) : "";
+}
+function communityScore(p){
+  const score = formattedCommunityScore(p);
+  return score ? `<span class="community-score">Fragrantica <strong>${score}</strong><span>/ 5</span></span>` : "";
 }
 // 層架標籤用的精簡分數。
 function shelfScore(p){
-  const score = num(p.fragranticaRating, Store.bundle?.ratings?.[fragranticaId(p.source)]);
-  return Number.isFinite(score) && score >= 1 && score <= 5 ? `<b class="mini-score" title="Fragrantica 分數">★ ${score.toFixed(2)}</b>` : "";
+  const score = formattedCommunityScore(p);
+  return score ? `<b class="mini-score" title="Fragrantica 分數">★ ${score}</b>` : "";
 }
 const NOTE_FIELDS = [["top","前調"],["heart","中調"],["base","後調"],["overall","整體香調"]];
 const NOTE_KEYS = {首調:"top",前調:"top",中調:"heart",基調:"base",尾調:"base",後調:"base",整體香調:"overall"};
@@ -1086,6 +1110,7 @@ function renderShelf(){
   $("#v-shelf").innerHTML = `<div class="toolbar shelf-toolbar">
       <input class="search" id="shelf-q" type="search" placeholder="搜尋品牌、名稱、香調" value="${esc(S.q)}" aria-label="搜尋香水">
       ${famUsed.length ? `<button class="btn ghost fam-toggle" data-act="fam-toggle" aria-expanded="${!!(S.famOpen || S.fam)}">${S.fam ? esc(FAM[S.fam] || S.fam) : "香調"}</button>` : ""}
+      <button class="btn ghost" data-act="compare">比較</button>
       <button class="btn primary" data-act="new">新增</button>
     </div>
     <div class="seg" role="group" aria-label="依類型篩選">${Object.entries(STOCK_SEG).map(([value,label]) =>
@@ -1241,6 +1266,111 @@ function closeSheet(){
   window.scrollTo(0, pageScrollY);
 }
 
+function comparePicker(ids = ["",""]){
+  const selected = ids.map(id => byId(id) ? id : "");
+  const groups = ["all","active","wish","tried"];
+  openSheet(`<h3 tabindex="-1" id="compare-title">比較香水</h3>
+    <div class="compare-selection">
+      <p id="compare-status" role="status"></p>
+      <div class="chips" id="compare-selected" hidden></div>
+    </div>
+    <input class="search compare-search" id="compare-search" type="search" placeholder="搜尋品牌或名稱" aria-label="搜尋香水">
+    <div class="seg compare-filters" id="compare-filters" role="group" aria-label="依類型篩選">${groups.map(group =>
+      `<button type="button" data-group="${group}" aria-pressed="${group === "all"}">${STOCK_SEG[group]}</button>`).join("")}</div>
+    <div class="catalog-results" id="compare-options"></div>`);
+  const input = $("#compare-search"), filters = $("#compare-filters");
+  const options = $("#compare-options"), selection = $("#compare-selected");
+  let group = "all";
+  const type = p => p.own || (p.remaining === "empty" ? "empty" : "active");
+  const identity = p => [p.brand,p.conc,STOCK_SEG[type(p)]].filter(Boolean).join(" · ");
+
+  function renderOptions(){
+    const matches = S.perfumes.filter(p => (group === "all" || type(p) === group) &&
+      matchesCatalog(input.value,...catalogSearchFields(p))).sort(comparePerfumes);
+    options.innerHTML = matches.length ? matches.map(p => `<button type="button" class="catalog-choice compare-option"
+        data-compare-id="${esc(p.id)}" aria-pressed="${selected.includes(p.id)}">
+      ${photo(p,"ph-sm")}
+      <span class="compare-choice-text"><b>${esc(p.name)}</b><br><span class="small muted">${esc(identity(p))}</span></span>
+      ${selected.includes(p.id) ? '<span class="compare-check" aria-hidden="true">✓</span>' : ""}
+    </button>`).join("") : '<p class="small muted">這個分類找不到符合的香水。</p>';
+  }
+  function renderSelection(){
+    const perfumes = selected.map(byId).filter(Boolean);
+    $("#compare-status").textContent = perfumes.length ? "再選一支查看比較" : "選兩支香水開始比較";
+    selection.hidden = !perfumes.length;
+    selection.innerHTML = perfumes.map(p => `<button class="chip" type="button" data-compare-id="${esc(p.id)}"
+      aria-label="移除 ${esc(p.name)}">${esc([p.name,p.conc].filter(Boolean).join(" · "))} <span aria-hidden="true">×</span></button>`).join("");
+  }
+  function select(e){
+    const button = e.target.closest("[data-compare-id]");
+    if (!button || !byId(button.dataset.compareId)) return;
+    const id = button.dataset.compareId;
+    const index = selected.indexOf(id);
+    if (index === -1) selected[selected.indexOf("")] = id;
+    else selected[index] = "";
+    if (selected.every(Boolean)) {
+      compareResults(selected);
+      return;
+    }
+    renderSelection();
+    renderOptions();
+    const focused = [...options.querySelectorAll("[data-compare-id]")].find(option => option.dataset.compareId === id);
+    (focused || input).focus({preventScroll:true});
+  }
+  filters.addEventListener("click",e => {
+    const button = e.target.closest("[data-group]");
+    if (!button) return;
+    group = button.dataset.group;
+    filters.querySelectorAll("[data-group]").forEach(choice => choice.setAttribute("aria-pressed",choice === button));
+    renderOptions();
+  });
+  input.addEventListener("input",renderOptions);
+  options.addEventListener("click",select);
+  selection.addEventListener("click",select);
+  renderSelection();
+  renderOptions();
+  $("#compare-title").focus({preventScroll:true});
+}
+
+function compareResults(ids){
+  const perfumes = ids.map(byId);
+  if (!perfumes.every(Boolean)) { comparePicker(ids); return; }
+  const notes = perfumes.map(p => splitNotes(p.notes));
+  const fields = [
+    ["濃度",perfumes.map(p => esc(p.conc ? concentrationLabel(p.conc) : ""))],
+    ["Fragrantica 分數",perfumes.map(p => {
+      const score = formattedCommunityScore(p);
+      return score ? `<b class="compare-score">${score} / 5</b>` : "";
+    })],
+    ["我的評分／印象",perfumes.map(p => {
+      const rating = Number.isFinite(p.rating) && p.rating >= 1 && p.rating <= 5 ? `<b>${p.rating} / 5</b>` : "";
+      return rating + (p.memo ? `<span class="compare-memo">${esc(p.memo)}</span>` : "");
+    })],
+    ...NOTE_FIELDS.filter(([key]) => key !== "overall" || notes.some(note => note.overall))
+      .map(([key,label]) => [label,notes.map(note => esc(note[key]))])
+  ];
+  openSheet(`<h3 tabindex="-1" id="compare-title">比較結果</h3>
+    <table class="compare-table" id="compare-table" aria-label="香水比較">
+      <thead>
+        <tr>${perfumes.map(p => `<th scope="col">${photo(p,"compare-photo","eager")}
+          <span class="small muted compare-brand">${esc(p.brand)}</span><span class="compare-name">${esc(p.name)}</span>
+        </th>`).join("")}</tr>
+        <tr>${perfumes.map((_,index) => `<td><button class="chip" type="button" data-compare-side="${index}"
+          aria-label="更換${index === 0 ? "左" : "右"}側香水">更換</button></td>`).join("")}</tr>
+      </thead>
+      ${fields.map(([label,values]) => `<tbody><tr><th scope="rowgroup" colspan="2">${label}</th></tr>
+        <tr>${values.map(value => `<td>${value || '<span class="muted">—</span>'}</td>`).join("")}</tr></tbody>`).join("")}
+    </table>`);
+  $("#compare-table").addEventListener("click",e => {
+    const button = e.target.closest("[data-compare-side]");
+    if (!button) return;
+    const selected = [...ids];
+    selected[Number(button.dataset.compareSide)] = "";
+    comparePicker(selected);
+  });
+  $("#compare-title").focus({preventScroll:true});
+}
+
 // 願望清單／試香：找出香調比例最接近的、你已經有的香水
 function similarOwned(p){
   const vec = x => Object.fromEntries((x.accords || []).map(([k,v]) => [k, num(v,0)]));
@@ -1262,10 +1392,12 @@ function detailSheet(id){
   const {last, count} = lastWorn(null);
   const todayCount = wearsOn(TODAY).filter(w => w.perfumeId === id).length;
   const score = communityScore(p);
+  const compare = `<button class="btn ghost" data-act="compare" data-id="${esc(id)}">比較</button>`;
   const stars = `<div><div class="label">${isOwned(p) ? "我的評分" : "我的印象"}</div><div class="stars">${[1,2,3,4,5].map(n => `<button class="${num(p.rating,0)>=n?"on":""}" data-act="rate" data-id="${esc(id)}" data-v="${n}" aria-pressed="${p.rating===n}" aria-label="${n} 星">★</button>`).join("")}</div></div>`;
   const controls = isOwned(p) ? `<div class="actions">
         <button class="btn primary" data-act="wear" data-id="${esc(id)}">${todayCount ? "補香（再記一次）" : wearsOn(TODAY).length ? "今天也噴這支" : "今天噴這支"}</button>
         <button class="btn ghost" data-act="edit" data-id="${esc(id)}">編輯</button>
+        ${compare}
       </div>
       ${todayCount ? `<div class="done-badge">✓ 今天已噴 ${todayCount} 次</div>` : ""}
       ${stars}
@@ -1278,6 +1410,7 @@ function detailSheet(id){
         <button class="btn primary" data-act="own" data-id="${esc(id)}">買到了，加入香水櫃</button>
         ${p.own === "wish" ? `<button class="btn ghost" data-act="tried" data-id="${esc(id)}">已經試香</button>` : ""}
         <button class="btn ghost" data-act="edit" data-id="${esc(id)}">編輯</button>
+        ${compare}
         ${p.own === "tried" ? `<button class="btn ghost danger" data-act="del" data-id="${esc(id)}">刪除試香</button>` : ""}
       </div>
       ${stars}
@@ -2004,6 +2137,7 @@ document.addEventListener("click", async e => {
     case "open": detailSheet(id); break;
     case "close": closeSheet(); break;
     case "edit": editSheet(id); break;
+    case "compare": comparePicker(id ? [id,""] : undefined); break;
     case "new": editSheet(null); break;
     case "restock": {
       const p = byId(id);
