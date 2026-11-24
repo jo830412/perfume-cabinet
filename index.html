@@ -356,11 +356,16 @@ const accColor = k => (ACC[k] || [0,"#8A8F9C"])[1];
 const OCC = {office:"上班",casual:"休閒",date:"約會",formal:"正式",sport:"運動戶外",night:"夜晚聚會"};
 const REMAIN = {full:"滿",most:"多",half:"半",low:"少"};
 const SEASON = {spring:"春",summer:"夏",fall:"秋",winter:"冬",day:"白天",night:"晚上"};
-// 各季節代表氣溫 °C。春天和秋天的溫度差不多，所以不靠溫度分，而是看月份：1～6 月算春天、7～12 月算秋天
-const seasonCenters = date => {
-  const mid = Number(String(date).slice(5,7)) <= 6 ? "spring" : "fall";
-  return {winter:13, [mid]:22, summer:30};
-};
+function seasonWeights(date, temp){
+  const [year, month, day] = date.split("-").map(Number);
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const monthPosition = month + (day - 1) / daysInMonth;
+  // 春秋共用 22°C 的權重，按日期漸變，4 月初偏春、10 月初偏秋。
+  const springShare = .5 + .4 * Math.cos((monthPosition - 4) * Math.PI / 6);
+  const near = center => Math.exp(-(((temp - center) / 5) ** 2));
+  const mild = near(22);
+  return {winter:near(13), spring:mild * springShare, fall:mild * (1 - springShare), summer:near(30)};
+}
 const NEUTRAL_SUITABILITY = 70;
 const isNightOcc = occ => occ === "date" || occ === "night";
 const FRESH = ["citrus","aquatic","green","fresh","freshspicy","aromatic","herbal","tea","mineral"];
@@ -470,7 +475,6 @@ const Store = {
       if (!det || p.detailsVer === det.ver) continue;
       for (const key of DETAIL_FIELDS) if (det[key] != null) p[key] = det[key];
       if (Number.isFinite(det.rating)) p.fragranticaRating = det.rating;
-      if (!p.occ?.length) p.occ = suggestOcc(p);
       p.detailsVer = det.ver;
       p.t = Date.now();
     }
@@ -745,7 +749,7 @@ function profile(p){
   const part = list => acc.reduce((a,[k,v]) => a + (list.includes(k) ? v : 0), 0) / tot;
   return {fresh: part(FRESH), heavy: part(HEAVY)};
 }
-// 依香調、擴散度和日夜投票，先幫還沒設定場合的香水挑好適合場合（你可以在編輯裡再改）
+// 新增表單依香調、擴散度和日夜適用度預選場合。
 function suggestOcc(p){
   const scent = profile(p) || {fresh:.5, heavy:.2};
   const st = num(p.strength, 3), night = num(p.seasons?.night, 70);
@@ -760,25 +764,33 @@ function suggestOcc(p){
 }
 function recommend(today, ctx){
   const t = ctx.temp, night = isNightOcc(ctx.occ);
-  const weights = Object.entries(seasonCenters(today)).map(([key,center]) => [key, Math.exp(-(((t-center)/5) ** 2))]);
+  const weights = Object.entries(seasonWeights(today, t));
   const totalWeight = weights.reduce((sum,[,weight]) => sum + weight,0);
+  const suitability = value => Math.max(0,Math.min(100,num(value,NEUTRAL_SUITABILITY)));
   return S.perfumes.filter(p => isOwned(p) && p.remaining !== "empty").map(p => {
     let s = 0; const why = [], tips = [];
     const st = num(p.strength, 3);
     const sea = p.seasons;
     if (sea) {
-      // 以相同的中性值計算有票數和缺少票數的款式。
-      const suitability = value => Math.max(0,Math.min(100,num(value,NEUTRAL_SUITABILITY)));
-      const fit = totalWeight ? weights.reduce((sum,[key,weight]) => sum + weight*suitability(sea[key]),0)/totalWeight : NEUTRAL_SUITABILITY;
-      const seasonScore = (fit - NEUTRAL_SUITABILITY) * .05;
+      let weightedScore = 0, bestSeason = null, bestContribution = 0;
+      for (const [key, weight] of weights) {
+        // 缺值用中性分數，對加減分的貢獻是零。
+        const contribution = (suitability(sea[key]) - NEUTRAL_SUITABILITY) * weight;
+        weightedScore += contribution;
+        if (contribution > bestContribution) {
+          bestContribution = contribution;
+          bestSeason = key;
+        }
+      }
+      const seasonScore = totalWeight ? (weightedScore / totalWeight) * .05 : 0;
       s += seasonScore;
-      // 理由寫出今天的體感最接近哪個季節，以及網友票選的分數
-      const [mainSeason] = weights.reduce((best, cur) => cur[1] > best[1] ? cur : best);
-      if (fit >= 80) why.push([seasonScore, `${t}°C 偏${SEASON[mainSeason]}天，網友票選${SEASON[mainSeason]}季適用度 ${Math.round(suitability(sea[mainSeason]))}`]);
+      if (seasonScore >= .5 && bestSeason) {
+        why.push([seasonScore, `季節適用度加分（${SEASON[bestSeason]}季 ${Math.round(suitability(sea[bestSeason]))}）`]);
+      }
       const dn = suitability(sea[night ? "night" : "day"]);
       const timeScore = (dn - NEUTRAL_SUITABILITY) * .02;
       s += timeScore;
-      if (night && dn >= 85) why.push([timeScore, `網友票選晚上適用度 ${Math.round(dn)}`]);
+      if (night && dn >= 85) why.push([timeScore, `晚上適用度 ${Math.round(dn)}`]);
     } else if (Number.isFinite(p.tMin) && Number.isFinite(p.tMax)) {
       const lo = p.tMin, hi = p.tMax;
       if (t >= lo && t <= hi) { s += 2.5; why.push([2.5, `${t}°C 在它的舒適溫度 ${lo}–${hi}°C 之間`]); }
@@ -808,7 +820,7 @@ function recommend(today, ctx){
     if (st >= 4.5) tips.push("擴散很強，噴 1–2 下就夠");
     else if (ctx.occ === "office" && st >= 4) tips.push("辦公室裡噴 2 下以內");
     s += jitter(today + p.id) * .8;
-    if (!why.length) why.push([0, `綜合今天的天氣和${OCC[ctx.occ] || "場合"}，分數最高`]);
+    if (!why.length) why.push([0, "綜合今天的天氣與場合排序"]);
     why.sort((a,b) => b[0]-a[0]);
     return {p, score:s, why: why.slice(0,3).map(x => x[1]), tips};
   }).sort((a,b) => b.score - a.score);
@@ -1143,10 +1155,9 @@ function renderPrefs(){
       <summary>推薦怎麼算</summary>
       <div class="small" style="display:grid;gap:6px;padding:0 12px 14px">
         <div>每支香水依下列項目加減分，取最高分當今日推薦：</div>
-        <div>・依體感溫度參考季節適用度，沒資料的款式維持中性</div>
+        <div>・依體感溫度參考季節適用度，春秋比重隨日期逐步調整，缺少資料維持中性</div>
         <div>・依選香時段判斷雨濕，清爽香調加分、厚重香調扣分</div>
         <div>・約會、夜晚聚會採用晚上預報，其餘場合採用白天預報</div>
-        <div>・季節看月份：1～6 月的溫和天氣算春天，7～12 月算秋天</div>
         <div>・符合今天的場合加分、不符合扣分，沒設定場合的算中性；上班時太濃的扣分</div>
         <div>・你的評分也會影響推薦，分數每天會有小幅變化</div>
         <div>・已用完、願望清單、試香紀錄的香水不會推薦</div>
