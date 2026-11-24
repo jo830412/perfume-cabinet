@@ -97,7 +97,10 @@ h2{font-size:13px;font-weight:500;color:var(--muted);letter-spacing:.08em;margin
 .why{list-style:none;padding:0;margin:12px 0 0;display:grid;gap:6px}
 .why li{padding-left:18px;position:relative}
 .why li::before{content:"";position:absolute;left:3px;top:.62em;width:7px;height:7px;border-radius:2px;background:var(--c,var(--accent));transform:rotate(45deg)}
-.tips{margin-top:10px;font-size:13px;color:var(--amber)}
+.spray-advice{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 10px;margin-top:12px;padding:9px 12px;
+  border-radius:10px;background:var(--accent-soft);font-size:13px;color:var(--ink)}
+.spray-advice b{font-size:14px;color:var(--accent);white-space:nowrap}
+.spray-advice + .today-actions{margin-top:10px}
 .facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
 .facts div{min-width:0}
 .facts b{display:block;font-weight:500;font-size:15px}
@@ -825,13 +828,37 @@ function suggestOcc(p){
   if (night >= 85 || st >= 4.5) occ.push("night");
   return Object.keys(OCC).filter(k => occ.includes(k));
 }
+// 建議給在記錄前參考。擴散度缺值時用保守的起始量。
+function sprayAdvice(p, ctx){
+  const strength = p.strength;
+  if (!Number.isFinite(strength) || strength < 1 || strength > 5) {
+    return {range:"1–2", reason:"擴散度未評估，先從 1 下試起"};
+  }
+  if (ctx.occ === "office" || ctx.occ === "date") {
+    const occasion = ctx.occ === "office" ? "上班" : "約會";
+    const reason = strength >= 4 ? `${occasion}近距離，這支擴散較強` : `${occasion}離人較近，先從少量試起`;
+    return {range:"1–2", reason};
+  }
+  if (strength >= 4.5) return {range:"1–2", reason:"擴散很強，先從少量試起"};
+
+  // 用實際採用的體感溫度。無預報時的月平均氣溫不觸發炎熱調整。
+  const hot = ctx.guessed === false && Number.isFinite(ctx.temp) && ctx.temp >= 30;
+  if (hot) {
+    return strength >= 4 ? {range:"1–2", reason:"體感較熱，這支擴散較強"} :
+      {range:"2–3", reason:"體感較熱，先從 2 下開始"};
+  }
+  const light = strength <= 2.5;
+  if (ctx.occ === "sport" && light) return {range:"3–4", reason:"擴散較柔和，戶外可稍加量"};
+  const diffusion = strength >= 4 ? "較強" : light ? "較柔和" : "適中";
+  return {range:"2–3", reason:`擴散${diffusion}，先從 2 下開始`};
+}
 function recommend(today, ctx){
   const t = ctx.temp, night = isNightOcc(ctx.occ);
   const weights = Object.entries(seasonWeights(today, t));
   const totalWeight = weights.reduce((sum,[,weight]) => sum + weight,0);
   const suitability = value => Math.max(0,Math.min(100,num(value,NEUTRAL_SUITABILITY)));
   return S.perfumes.filter(p => isOwned(p) && p.remaining !== "empty").map(p => {
-    let s = 0; const why = [], tips = [];
+    let s = 0; const why = [];
     const st = num(p.strength, 3);
     const sea = p.seasons;
     if (sea) {
@@ -880,12 +907,10 @@ function recommend(today, ctx){
     const r = Math.max(1,Math.min(5,num(p.rating,3))), ratingScore = (r-3) * .7;
     s += ratingScore;
     if (r >= 5) why.push([ratingScore, "你給它滿分"]); else if (r >= 4) why.push([ratingScore, "你的高分愛用款"]);
-    if (st >= 4.5) tips.push("擴散很強，噴 1–2 下就夠");
-    else if (ctx.occ === "office" && st >= 4) tips.push("辦公室裡噴 2 下以內");
     s += jitter(today + p.id) * .8;
     if (!why.length) why.push([0, "綜合今天的天氣與場合排序"]);
     why.sort((a,b) => b[0]-a[0]);
-    return {p, score:s, why: why.slice(0,3).map(x => x[1]), tips};
+    return {p, score:s, why: why.slice(0,3).map(x => x[1])};
   }).sort((a,b) => b.score - a.score);
 }
 
@@ -1054,8 +1079,9 @@ function renderToday(){
   }
   const offset = recs.length ? S.offset % recs.length : 0;
   const ordered = worn ? recs : recs.slice(offset).concat(recs.slice(0,offset));
-  const main = worn ? {p:worn, why:[], tips:[]} : ordered[0];
+  const main = worn ? {p:worn, why:[]} : ordered[0];
   const p = main.p, alts = ordered.filter(r => r.p.id !== p.id).slice(0,3);
+  const spray = worn ? null : sprayAdvice(p, c);
   const altWhy = altReasons(main, alts);
   // 已記錄時顯示「今天以前」最後一次噴的時間，才不會和「已記錄」互相矛盾
   const prev = lastWorn(worn ? TODAY : null).last[p.id];
@@ -1074,6 +1100,7 @@ function renderToday(){
       </div>
       ${photo(p, "ph-lg", "eager")}
     </div>
+    ${spray ? `<div class="spray-advice"><b>建議噴 ${spray.range} 下</b><span>${esc(spray.reason)}</span></div>` : ""}
     <div class="actions today-actions">
       ${worn ? `<span class="done-badge">✓ 已記錄${p.remaining === "empty" ? " · 已用完" : ""}</span>
                <button class="btn primary" data-act="wear" data-id="${esc(p.id)}">補香</button>
@@ -1082,7 +1109,6 @@ function renderToday(){
     </div>
     ${timeline}
     ${main.why.length ? `<ul class="why">${main.why.map(w => `<li>${esc(w)}</li>`).join("")}</ul>` : ""}
-    ${main.tips.length ? `<div class="tips">${main.tips.map(esc).join("・")}</div>` : ""}
     <div class="facts">
       <div>${metric("擴散度", p.strength)}</div>
       <div>${metric("持久度", p.longevity)}</div>
