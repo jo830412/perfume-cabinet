@@ -301,8 +301,6 @@ html,body{margin:0}
 /* 新增香水：網址預覽、類型 */
 .src-row{display:flex;gap:8px;align-items:center}
 .src-row input{flex:1}
-.missing-details{display:grid;gap:8px;padding:12px;border-radius:12px;border:1px dashed var(--line)}
-.missing-details .chip{justify-self:start;min-height:40px}
 .own-tag{justify-self:start;font-size:12px;font-weight:500;padding:3px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}
 .similar{display:flex;gap:10px;align-items:center;width:100%;padding:10px 12px;border:0;border-radius:12px;background:var(--bg);text-align:left}
 </style>
@@ -467,7 +465,7 @@ const Store = {
     ws.forEach(w => { if (w && w.date) { const id = w.id || w.date; d.wears[id] = Object.assign({t:0}, w, {id}); } });
     return d;
   },
-  // 網站 details 有這支香水的完整資料、而且是新的一版（請 Claude 補資料時才會更新），就補進去
+  // 網站有新版的 Fragrantica 資料就更新。
   applyDetails(b){
     const details = b?.details || {};
     for (const p of Object.values(this.data.perfumes)) {
@@ -477,6 +475,30 @@ const Store = {
       if (Number.isFinite(det.rating)) p.fragranticaRating = det.rating;
       p.detailsVer = det.ver;
       p.t = Date.now();
+    }
+  },
+  // 已加入願望清單的品項，只補上能確認版本且原本空白的欄位。
+  fillWishlistDetails(b){
+    const catalog = [...(b.perfumes || []), ...(b.variants || [])];
+    const fields = ["conc","notes","families","aliases","source","catalogSource","catalogImage","fragranticaRating"];
+    for (const p of Object.values(this.data.perfumes)) {
+      if (p.del || p.own !== "wish" || !p.brand || !p.name) continue;
+      const brand = catalogText(remoteCatalogQuery(p.brand));
+      const name = catalogName(p.name);
+      const conc = catalogConc(p.conc || catalogText(p.name).match(VERSION_SUFFIX)?.[1]);
+      const sourceId = fragranticaId(p.source);
+      if (p.source && !sourceId) continue;
+      const matches = catalog.filter(item => catalogText(item.brand) === brand &&
+        (!conc || catalogConc(item.conc) === conc) &&
+        (sourceId ? fragranticaId(item.source) === sourceId :
+          catalogName(item.name) === name || item.aliases?.some(alias => catalogName(alias) === name)));
+      if (matches.length !== 1) continue;
+      const [match] = matches;
+      for (const key of fields) {
+        const value = p[key];
+        const missing = value == null || value === "" || (Array.isArray(value) && !value.length);
+        if (missing && match[key] != null) p[key] = match[key];
+      }
     }
   },
   // 更新網站附的香水資料並保留個人欄位；跳過已刪除的香水和無須更正的自訂資料。
@@ -498,6 +520,7 @@ const Store = {
       if (cur && !cur.b) delete this.data.perfumes[p.id].b;
     }
     this.applyDetails(b);
+    this.fillWishlistDetails(b);
   },
   // 每筆資料各自比修改時間，新的贏
   merge(remote){
@@ -1196,17 +1219,6 @@ function closeSheet(){
   window.scrollTo(0, pageScrollY);
 }
 
-// 還沒有 Fragrantica 完整資料（季節投票、香調比例、擴散／持久投票）時，提示可以請 Claude 補
-const hasFullDetails = p => !!(fragranticaId(p.source) && p.seasons && p.accords?.length && p.votes);
-function missingDetails(p){
-  if (hasFullDetails(p)) return "";
-  const linked = !!fragranticaId(p.source);
-  return `<div class="missing-details">
-    <div class="small">${linked ? "已連到 Fragrantica，但還沒有網友的季節投票和香調比例。" : "還沒有 Fragrantica 的瓶身照、季節投票和香調比例。"}
-      把這支告訴 Claude，就能補上完整資料，下次打開 App 會自動帶入。</div>
-    <button class="chip" data-act="ask-claude" data-id="${esc(p.id)}">複製給 Claude 的訊息</button>
-  </div>`;
-}
 // 願望清單／試香：找出香調比例最接近的、你已經有的香水
 function similarOwned(p){
   const vec = x => Object.fromEntries((x.accords || []).map(([k,v]) => [k, num(v,0)]));
@@ -1258,7 +1270,6 @@ function detailSheet(id){
     </div>
     <div class="detail-controls">${controls}</div>
     ${!isOwned(p) && p.memo ? `<div class="note-list"><span class="label">心得</span><span>${esc(p.memo)}</span></div>` : ""}
-    ${missingDetails(p)}
     ${noteList(p.notes)}
     ${p.seasons || p.accords?.length ? `<div class="charts">
       ${p.seasons ? `<div><div class="label">季節與時段適用度</div><div class="seabars">${Object.entries(SEASON).map(([k,l]) =>
@@ -1429,7 +1440,7 @@ function applyPerfumeVersion(p,version){
   Object.assign(p, {
     name:version.name, conc:version.conc, notes:version.notes || "",
     source:version.source || "", catalogSource:version.catalogSource || "", catalogImage:version.catalogImage || "",
-    families:version.families || [], accords:version.accords || [],
+    families:version.families || [], accords:version.accords || [], aliases:version.aliases || [],
     strength:version.strength ?? null, longevity:version.longevity ?? null,
     fragranticaRating:version.fragranticaRating ?? null, customVersion:true
   });
@@ -1439,7 +1450,8 @@ function applyPerfumeVersion(p,version){
 
 const CATALOG_BRAND_ALIASES = {
   "Hermès":["愛馬仕"], Chanel:["香奈兒"], Dior:["迪奧"], "Louis Vuitton":["LV","路易威登"],
-  Montblanc:["萬寶龍"], Creed:["信仰"], Prada:["普拉達"], Burberry:["巴寶莉"], Diptyque:["蒂普提克"]
+  Montblanc:["萬寶龍"], Creed:["信仰","克里德"], Prada:["普拉達"], Burberry:["巴寶莉"], Diptyque:["蒂普提克"],
+  Amouage:["愛慕"]
 };
 const searchText = value => String(value ?? "").normalize("NFKD").toLowerCase().replace(/[\p{M}'’]/gu,"")
   .replace(/[^\p{L}\p{N}]+/gu," ").trim();
@@ -1449,13 +1461,25 @@ function matchesCatalog(query,...values){
   return searchText(query).split(" ").every(word => haystack.includes(word));
 }
 function catalogSearchFields(p){
-  return [p.name,p.brand,p.conc,...(CATALOG_BRAND_ALIASES[brandAlias(p.brand)] || [])];
+  return [p.name,p.brand,p.conc,...(p.aliases || []),...(CATALOG_BRAND_ALIASES[brandAlias(p.brand)] || [])];
 }
 function searchLocalCatalog(query){
-  const unique = new Map();
+  const unique = new Map(), sources = new Set();
   const items = [...(Store.bundle?.perfumes || []), ...(Store.bundle?.variants || []), ...S.perfumes];
-  for (const p of items) if (p.brand && p.name && !unique.has(versionKey(p))) unique.set(versionKey(p),p);
-  const perfumes = [...unique.values()].filter(p => matchesCatalog(query,...catalogSearchFields(p)));
+  for (const p of items) {
+    if (!p.brand || !p.name || !matchesCatalog(query,...catalogSearchFields(p))) continue;
+    const source = fragranticaId(p.source), key = versionKey(p);
+    if ((source && sources.has(source)) || unique.has(key)) continue;
+    unique.set(key,p);
+    if (source) sources.add(source);
+  }
+  const term = searchText(query);
+  const exact = p => {
+    const brand = searchText(p.brand), conc = searchText(p.conc);
+    const names = [catalogName(p.name), ...(p.aliases || []).map(searchText)];
+    return Number(names.some(name => [name, `${brand} ${name}`, `${name} ${conc}`, `${brand} ${name} ${conc}`].includes(term)));
+  };
+  const perfumes = [...unique.values()].sort((a,b) => exact(b) - exact(a));
   const brands = [...new Set([...Object.keys(CATALOG_BRAND_ALIASES), ...items.map(p => p.brand).filter(Boolean)])]
     .filter(brand => matchesCatalog(query,brand,...(CATALOG_BRAND_ALIASES[brandAlias(brand)] || [])));
   return {brands,perfumes};
@@ -1468,7 +1492,10 @@ function matchingBottle(p){
   if (!p.brand || !p.name) return null;
   const key = bottle => versionKey(Object.assign({},bottle,{brand:remoteCatalogQuery(bottle.brand)}));
   const requested = key(p);
-  const matches = S.perfumes.filter(item => key(item) === requested);
+  const source = fragranticaId(p.source);
+  const conc = catalogConc(p.conc);
+  const matches = S.perfumes.filter(item => key(item) === requested ||
+    (source && fragranticaId(item.source) === source && catalogConc(item.conc) === conc));
   return matches.find(item => item.remaining !== "empty") || matches[0] || null;
 }
 function duplicateNotice(p){
@@ -1521,7 +1548,7 @@ function wireCatalogSearch(formIsOpen){
       <span>${esc(name || brand)}${name ? `<br><span class="small muted">${esc([brand,conc].filter(Boolean).join(" · "))}</span>` : ""}</span>
       ${name ? "" : '<span class="small muted">選用品牌</span>'}
     </button>`).join("");
-    status.textContent = message || (choices.length ? "" : "找不到相符的品牌或香水，可以手動新增。");
+    status.textContent = message || (choices.length ? "" : "找不到相符的香水。填寫品牌與名稱即可儲存。");
     status.hidden = !status.textContent;
   }
   function update(immediate){
@@ -1538,7 +1565,8 @@ function wireCatalogSearch(formIsOpen){
       show(query,cache.get(key));
       return;
     }
-    show(query,[],"正在搜尋香水資料…");
+    const {perfumes} = searchLocalCatalog(query);
+    show(query,[],perfumes.length ? "" : "正在搜尋香水資料…");
     timer = setTimeout(async () => {
       try {
         const response = await readScento("/search?"+new URLSearchParams({q:phrase,kind:"any"}));
@@ -1546,7 +1574,9 @@ function wireCatalogSearch(formIsOpen){
         cache.set(key,online);
         if (formIsOpen() && generation === requested) show(query,online);
       } catch {
-        if (formIsOpen() && generation === requested) show(query,[],"暫時無法搜尋線上資料，可以手動新增。");
+        if (formIsOpen() && generation === requested) {
+          show(query,[],perfumes.length ? "" : "線上搜尋暫時無法使用。填寫品牌與名稱即可儲存。");
+        }
       }
     },immediate ? 0 : 320);
   }
@@ -1587,10 +1617,10 @@ function srcHint(url){
   const fid = fragranticaId(url);
   if (!fid) return "貼上香水頁網址，就會顯示對應瓶照。";
   return Store.bundle?.details?.[fid] ? "網站已經有這支的完整資料，儲存後會自動帶入。" :
-    "已找到瓶照。季節投票和香調比例可以請 Claude 補上。";
+    "儲存後會顯示這支香水的瓶照與來源連結。";
 }
 function editSheet(id,draft=null){
-  const catalogFields = ["brand","name","conc","families","accords","notes","seasons","strength","longevity",
+  const catalogFields = ["brand","name","conc","families","aliases","accords","notes","seasons","strength","longevity",
     "occ","source","catalogSource","catalogImage","fragranticaRating","votes","memo","own","triedOn"];
   const p = id ? byId(id) : Object.assign(
     {brand:"", name:"", conc:"", families:[], notes:"", occ:[], rating:null, remaining:null,
@@ -1661,7 +1691,8 @@ function editSheet(id,draft=null){
     </form>`);
   const form = $("#pform");
   const versionStatus = $("#version-status");
-  const identity = () => ({brand:$("#f-brand").value.trim(),name:$("#f-name").value.trim(),conc:$("#f-conc").value});
+  const identity = () => ({brand:$("#f-brand").value.trim(),name:$("#f-name").value.trim(),conc:$("#f-conc").value,
+    source:$("#f-src").value.trim()});
   const originalKey = versionKey(p);
   let pending = null;
   const formIsOpen = () => form.isConnected && !$("#sheet").hidden;
@@ -1713,6 +1744,7 @@ function editSheet(id,draft=null){
       $("#f-src-hint").textContent = srcHint(url);
       const rating = Store.bundle?.ratings?.[fragranticaId(url)];
       if (rating && !$("#f-score").value) $("#f-score").placeholder = String(rating);
+      updateDuplicate(identity());
     }
     if (e.target.id === "f-brand" || e.target.id === "f-name" || e.target.id === "f-conc") {
       $("#f-lookup").href = fragranticaSearch($("#f-brand").value,$("#f-name").value);
@@ -1924,14 +1956,6 @@ document.addEventListener("click", async e => {
       const p = byId(id); if (!p) break;
       await act(() => Store.savePerfume(Object.assign({}, p, {own:"tried", triedOn:TODAY})), "已移到試香紀錄");
       detailSheet(id);
-      break;
-    }
-    case "ask-claude": {
-      const p = byId(id); if (!p) break;
-      const text = `請幫我補香水櫃這支香水的 Fragrantica 完整資料：${[p.brand, p.name, p.conc].filter(Boolean).join(" ")}` +
-        (fragranticaId(p.source) ? `（${p.source}）` : "");
-      try { await navigator.clipboard.writeText(text); toast("已複製，貼給 Claude 就可以"); }
-      catch { toast(text); }
       break;
     }
     case "open": detailSheet(id); break;
