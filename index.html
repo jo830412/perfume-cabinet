@@ -422,6 +422,7 @@ const isOwned = p => !p.own;
 const availableToWear = p => !!p && isOwned(p) && p.remaining !== "empty";
 const LKEY = "perfume-cabinet-v1";
 const CODEX_PAIR = "perfume-codex-bridge";
+const codexSavedState = new Map();
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1644,6 +1645,8 @@ function detailSheet(id){
   const {last, count} = lastWorn(null);
   const todayCount = wearsOn(TODAY).filter(w => w.perfumeId === id).length;
   const score = communityScore(p);
+  const savedLookup = codexSavedState.get(id);
+  const repair = savedLookup?.key === codexVersionKey(p) ? savedLookup : null;
   const ratedPeriods = Object.entries(SEASON).filter(([key]) => Number.isFinite(p.seasons?.[key]));
   const compare = `<button class="btn ghost" data-act="compare" data-id="${esc(id)}">比較</button>`;
   const stars = `<div><div class="label">${isOwned(p) ? "我的評分" : "我的印象"}</div><div class="stars">${[1,2,3,4,5].map(n => `<button class="${num(p.rating,0)>=n?"on":""}" data-act="rate" data-id="${esc(id)}" data-v="${n}" aria-pressed="${p.rating===n}" aria-label="${n} 星">★</button>`).join("")}</div></div>`;
@@ -1677,6 +1680,10 @@ function detailSheet(id){
       </div>
       ${photo(p, "ph-lg", "eager")}
     </div>
+    ${codexPair() && codexNeedsData(p) ? `<div>
+      <p class="small muted" id="codex-saved-status" role="status"${repair?.message ? "" : " hidden"}>${esc(repair?.message)}</p>
+      <button type="button" class="btn ghost" data-act="codex-repair" data-id="${esc(id)}"${repair?.pending ? " disabled" : ""}>用 Codex 補資料</button>
+    </div>` : ""}
     <div class="detail-controls">${controls}</div>
     ${!isOwned(p) && p.memo ? `<div class="note-list"><span class="label">心得</span><span>${esc(p.memo)}</span></div>` : ""}
     ${noteList(p.notes)}
@@ -1960,9 +1967,24 @@ function codexProfile(item){
     fragranticaRating:source && Number.isFinite(item.rating) && item.rating >= 1 && item.rating <= 5 ? item.rating : null,
     codexImage:codexImageSource ? secure(item.image) : "",codexImageSource};
 }
-const codexVersionKey = p => versionKey({...p,brand:remoteCatalogQuery(p.brand)});
+function codexIdentity(p){
+  const brand = catalogText(remoteCatalogQuery(p.brand));
+  const title = catalogName(p.name);
+  const name = brand && title.startsWith(brand+" ") ? title.slice(brand.length+1) : title;
+  const namedConc = catalogText(p.name).match(VERSION_SUFFIX)?.[1];
+  return [brand,name,catalogConc(p.conc || namedConc)];
+}
+const codexVersionKey = p => JSON.stringify(codexIdentity(p));
+const codexNeedsData = p => !p.conc || !p.notes || !formattedCommunityScore(p) || !imgUrl(p);
+function matchingCodexVersions(profiles,requested){
+  const [brand,name,conc] = codexIdentity(requested);
+  return profiles.filter(profile => {
+    const [otherBrand,otherName,otherConc] = codexIdentity(profile);
+    return brand === otherBrand && name === otherName && (!conc || conc === otherConc);
+  });
+}
 function matchingCodexProfile(profiles,requested){
-  const result = profiles.filter(profile => codexVersionKey(profile) === codexVersionKey(requested));
+  const result = matchingCodexVersions(profiles,requested);
   return result.length === 1 ? result[0] : null;
 }
 async function readCodexPerfumes(pair,query,brand,conc){
@@ -2453,7 +2475,7 @@ function editSheet(id,draft=null){
         updateDuplicate(requested);
         return;
       }
-      await submitForm(p,version,pendingCodex() || (codexResolved && !changed ? Promise.resolve([]) : null));
+      await submitForm(p,version,pendingCodex() || (codexResolved && !changed ? false : null));
     } finally {
       submit.disabled = false;
     }
@@ -2505,19 +2527,43 @@ async function submitForm(orig,version,codexJob=null){
   if (!orig.id || version || p.source !== orig.source) {
     void enrichSavedPerfume(id).then(() => enrichBottlePhoto(id));
   }
-  if (!orig.id && codexPair()) void enrichSavedWithCodex(id,codexJob);
+  if (!orig.id && codexJob !== false) void enrichSavedWithCodex(id,codexJob);
 }
 
-async function enrichSavedWithCodex(id,pending){
+async function enrichSavedWithCodex(id,pending=null,retry=false){
   const initial = byId(id), pair = codexPair();
-  if (!initial?.conc || !pair) return;
+  if (!initial?.brand || !initial.name || !pair || !codexNeedsData(initial)) return;
+  const key = codexVersionKey(initial), previous = codexSavedState.get(id);
+  if (previous?.key === key && (previous.pending || !retry)) return;
+  const attempt = {key,pending:true,message:"Codex 正在補香水資料…"};
+  codexSavedState.set(id,attempt);
+  const show = message => {
+    attempt.message = message;
+    if (!viewingPerfume(id) || codexSavedState.get(id) !== attempt) return;
+    const status = $("#codex-saved-status");
+    const button = $("#sheet-scroll [data-act='codex-repair']");
+    if (status) { status.textContent = message; status.hidden = !message; }
+    if (button) button.disabled = attempt.pending;
+  };
+  show(attempt.message);
   try {
-    const profiles = await (pending || readCodexPerfumes(pair,initial.name,initial.brand,initial.conc));
+    let profiles = await (pending || readCodexPerfumes(pair,initial.name,"","")).catch(error => {
+      if (!pending) throw error;
+      return [];
+    });
+    if (!matchingCodexVersions(profiles,initial).length && codexVersionKey(byId(id) || {}) === key) {
+      profiles = await readCodexPerfumes(pair,initial.name,initial.brand,codexIdentity(initial)[2]);
+    }
     const profile = matchingCodexProfile(profiles,initial);
     const current = byId(id);
-    if (!profile || !current || codexVersionKey(current) !== codexVersionKey(initial)) return;
+    if (!current || codexVersionKey(current) !== key || codexSavedState.get(id) !== attempt) return;
+    if (!profile) {
+      attempt.message = matchingCodexVersions(profiles,initial).length > 1 ?
+        "有多個版本，請編輯這筆香水並選擇濃度。" : "Codex 目前找不到可核對的同款版本。";
+      return;
+    }
     const updated = {...current};
-    for (const field of ["notes","catalogSource","source","fragranticaRating","codexImage","codexImageSource"]) {
+    for (const field of ["conc","notes","catalogSource","source","fragranticaRating","codexImage","codexImageSource"]) {
       if (updated[field] != null && updated[field] !== "") continue;
       if (!profile[field]) continue;
       if (field === "catalogSource" && updated.notes !== profile.notes) continue;
@@ -2526,16 +2572,27 @@ async function enrichSavedWithCodex(id,pending){
       if (["codexImage","codexImageSource"].includes(field) && (updated.photo || updated.catalogImage || updated.bottleCutout)) continue;
       updated[field] = profile[field];
     }
-    if (JSON.stringify(updated) === JSON.stringify(current)) return;
+    if (JSON.stringify(updated) === JSON.stringify(current)) {
+      attempt.message = "目前已帶入查到的資料。";
+      return;
+    }
     await Store.savePerfume(updated);
+    attempt.key = codexVersionKey(updated);
+    attempt.message = codexNeedsData(updated) ? "已帶入查到的資料，部分欄位仍待查。" : "";
     if (viewingPerfume(id)) {
       const scroll = $("#sheet-scroll").scrollTop;
       detailSheet(id);
       $("#sheet-scroll").scrollTop = scroll;
     }
-    void enrichBottlePhoto(id);
+    if (!updated.bottleCutout) void enrichBottlePhoto(id);
     toast("Codex 已補齊香水資料");
-  } catch { /* An offline bridge never blocks saving. */ }
+  } catch (error) {
+    attempt.message = error.message === "busy" ? "Codex 正在查其他香水，等一下可以再補。" :
+      "暫時連不到 Codex，確認 Tailscale 和電腦的橋接程式開著再試。";
+  } finally {
+    attempt.pending = false;
+    if (codexVersionKey(byId(id) || {}) === attempt.key) show(attempt.message);
+  }
 }
 
 async function enrichSavedPerfume(id){
@@ -2807,7 +2864,10 @@ document.addEventListener("click", async e => {
       detailSheet(id);
       break;
     }
-    case "open": detailSheet(id); break;
+    case "open":
+      detailSheet(id); void enrichSavedWithCodex(id); break;
+    case "codex-repair":
+      void enrichSavedWithCodex(id,null,true); break;
     case "close": closeSheet(); break;
     case "edit": editSheet(id); break;
     case "compare": comparePicker(id ? [id,""] : undefined); break;
