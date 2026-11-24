@@ -378,6 +378,7 @@ html,body{margin:0}
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script src="./enrichment.js"></script>
+<script src="./codex-search.js"></script>
 <script>
 (() => {
 "use strict";
@@ -420,6 +421,7 @@ const OWN_TYPES = {"":"我有的",wish:"想買",tried:"試香過"};
 const isOwned = p => !p.own;
 const availableToWear = p => !!p && isOwned(p) && p.remaining !== "empty";
 const LKEY = "perfume-cabinet-v1";
+const CODEX_PAIR = "perfume-codex-bridge";
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -1028,7 +1030,7 @@ function altReasons(main, alts){
 /* ---------- rendering helpers ---------- */
 const famChips = p => (p.families || []).map(f => `<span class="fam" style="--c:${accColor(f)}"><i></i>${esc(accName(f))}</span>`).join(" ");
 // 香水圖片：自己拍的優先，其次用內建官網瓶照。
-const FRAGRANTICA_PAGE = /^https:\/\/(?:www\.)?fragrantica\.(?:asia|com)\/(?:perfume\/[^?#]+-(\d+)\.html|p\/(\d+)\/?)(?:[?#].*)?$/i;
+const FRAGRANTICA_PAGE = /^https:\/\/(?:(?:www|beta)\.)?fragrantica\.(?:asia|com)\/(?:perfume\/[^?#]+-(\d+)\.html|p\/(\d+)\/?)(?:[?#].*)?$/i;
 function fragranticaId(source){
   const match = String(source || "").match(FRAGRANTICA_PAGE);
   return match?.[1] || match?.[2];
@@ -1037,6 +1039,8 @@ function imgUrl(p){
   if (p.photo) return p.photo;
   if (/^data:image\/(?:webp|png);base64,[a-z\d+/=]+$/i.test(p.bottleCutout || "")) return p.bottleCutout;
   if (/^bottles\/[a-z\d-]+\.jpg$/.test(p.catalogImage || "")) return "./" + p.catalogImage;
+  const codexImage = globalThis.PerfumeCodex?.secureUrl(p.codexImage);
+  if (codexImage) return codexImage;
   const id = fragranticaId(p.source);
   if (id) return `https://fimgs.net/mdimg/perfume/375x500.${id}.jpg`;
   return /^https:\/\/armaf\.com\/cdn\/shop\/files\//.test(p.catalogImage || "") ? p.catalogImage : null;
@@ -1122,7 +1126,17 @@ async function enrichBottlePhoto(id){
   const orig = byId(id), url = orig && imgUrl(orig);
   if (!url || orig.photo || orig.bottleCutout || preparedBottle(url)) return;
   try {
-    const {transparent,url:cutout} = preparePhoto(await loadPhoto(url,true));
+    let result;
+    try { result = preparePhoto(await loadPhoto(url,true)); }
+    catch (error) {
+      const pair = codexPair(), fid = fragranticaId(orig.source);
+      if (!pair || !fid) throw error;
+      const file = await PerfumeCodex.request(pair,"/bottle",{id:fid});
+      const objectUrl = URL.createObjectURL(file);
+      try { result = preparePhoto(await loadPhoto(objectUrl)); }
+      finally { URL.revokeObjectURL(objectUrl); }
+    }
+    const {transparent,url:cutout} = result;
     const current = byId(id);
     if (!transparent || cutout.length > 160000 || !current || imgUrl(current) !== url || current.photo || current.bottleCutout) return;
     const isOpen = viewingPerfume(id);
@@ -1442,6 +1456,16 @@ function renderPrefs(){
       : `<div class="small muted">登入後，每次記錄或修改都會自動備份到你的 Google 雲端硬碟。換手機時登入同一個 Google 帳號，資料就會回來。</div>
           <button class="btn primary wide" data-act="sync">用 Google 登入並開始同步</button>`}
     </div>
+    <h2>Codex 自動查香水</h2>
+    <div class="card">
+      ${codexPair() ? `<p class="small">已配對。輸入香水品名就會用電腦上的 Codex 查詢。</p>
+        <button class="btn ghost" data-act="codex-disconnect">解除配對</button>` :
+        `<form id="codex-pair-form" class="perfume-form">
+          <div class="field"><label for="codex-pair-code">電腦的 Codex 配對碼</label>
+            <input id="codex-pair-code" type="password" required autocomplete="off" autocapitalize="none" spellcheck="false">
+          </div><div><button class="btn ghost" type="submit">連接 Codex</button></div>
+          <span id="codex-pair-status" class="small muted" role="status" hidden></span></form>`}
+    </div>
     <h2>手動備份</h2>
     <div class="card" style="display:grid;gap:10px">
       <div class="small muted">資料存在這支手機的瀏覽器裡。也可以把備份資料複製出來，自己貼到記事本保存。</div>
@@ -1676,7 +1700,8 @@ function detailSheet(id){
           ${isOwned(p) ? `<dt>使用</dt><dd>噴過 ${count[id]||0} 天 · 上次 ${esc(sinceText(last[id]))}</dd>` : ""}
           ${p.memo ? `<dt>備註</dt><dd>${esc(p.memo)}</dd>` : ""}
           ${fragranticaId(p.source) ? `<dt>資料來源</dt><dd><a href="${esc(p.source)}" target="_blank" rel="noopener">Fragrantica 頁面</a></dd>` : ""}
-          ${/^https:\/\/[^\s]+$/i.test(p.catalogSource || "") ? `<dt>版本資料</dt><dd><a href="${esc(p.catalogSource)}" target="_blank" rel="noopener">${p.catalogSource.startsWith("https://www.scento.com/") ? "Scento" : "品牌官方頁面"}</a></dd>` : ""}
+          ${/^https:\/\/[^\s]+$/i.test(p.catalogSource || "") ? `<dt>版本資料</dt><dd><a href="${esc(p.catalogSource)}" target="_blank" rel="noopener">${p.catalogSource.startsWith("https://www.scento.com/") ? "Scento" : "香水資料來源"}</a></dd>` : ""}
+          ${globalThis.PerfumeCodex?.secureUrl(p.codexImageSource) ? `<dt>瓶照來源</dt><dd><a href="${esc(p.codexImageSource)}" target="_blank" rel="noopener">產品頁面</a></dd>` : ""}
         </dl>
       </div>
     </details>
@@ -1823,7 +1848,7 @@ async function lookupPerfumeVersion(requested){
 
 function applyPerfumeVersion(p,version){
   // 舊版的資料與數值不可沿用；個人評分、剩量、備註、自訂照片、紀錄 ID 由原品項保留。
-  for (const key of ["votes","seasons","tMin","tMax","bottleCutout"]) delete p[key];
+  for (const key of ["votes","seasons","tMin","tMax","bottleCutout","codexImage","codexImageSource"]) delete p[key];
   Object.assign(p, {
     name:version.name, conc:version.conc, notes:version.notes || "",
     source:version.source || "", catalogSource:version.catalogSource || "", catalogImage:version.catalogImage || "",
@@ -1918,6 +1943,109 @@ function remoteSearchPhrase(query){
     for (const alias of aliases) words = words.replace(` ${catalogQueryText(alias)} `,` ${brand} `);
   }
   return words.trim() || request.text;
+}
+function codexPair(){
+  const pair = lsGet(CODEX_PAIR);
+  return globalThis.PerfumeCodex?.secureUrl(pair?.url) && /^[a-z\d_-]{43}$/i.test(pair?.token || "") ? pair : null;
+}
+function codexProfile(item){
+  const secure = PerfumeCodex.secureUrl;
+  if (!item || typeof item.brand !== "string" || typeof item.name !== "string" ||
+      !item.brand.trim() || !item.name.trim() || !["EDT","EDP","EDC","Parfum","Extrait"].includes(item.conc)) return null;
+  const catalogSource = secure(item.noteSource);
+  const source = fragranticaId(item.ratingSource) ? item.ratingSource : "";
+  const codexImageSource = secure(item.imageSource);
+  return {brand:item.brand.trim(),name:item.name.trim(),conc:item.conc,
+    notes:catalogSource && typeof item.notes === "string" ? item.notes.trim() : "",catalogSource,source,
+    fragranticaRating:source && Number.isFinite(item.rating) && item.rating >= 1 && item.rating <= 5 ? item.rating : null,
+    codexImage:codexImageSource ? secure(item.image) : "",codexImageSource};
+}
+const codexVersionKey = p => versionKey({...p,brand:remoteCatalogQuery(p.brand)});
+function matchingCodexProfile(profiles,requested){
+  const result = profiles.filter(profile => codexVersionKey(profile) === codexVersionKey(requested));
+  return result.length === 1 ? result[0] : null;
+}
+async function readCodexPerfumes(pair,query,brand,conc){
+  const concentrations = catalogSearchRequest(query).concentrations;
+  const specified = catalogConc(conc);
+  const select = concentrations.length === 1 ? concentrations[0] : specified;
+  if (concentrations.length > 1 || (specified && concentrations.length && specified !== select)) return [];
+  const input = {query:query.trim().slice(0,100)};
+  if (brand) input.brand = remoteCatalogQuery(brand).slice(0,60);
+  if (select && Object.hasOwn(VERSION_CONCENTRATIONS,select)) input.conc = select;
+  const result = await PerfumeCodex.request(pair,"/search",input);
+  return (Array.isArray(result.matches) ? result.matches.slice(0,5) : []).map(codexProfile).filter(Boolean);
+}
+function wireCodexLookup(form,formIsOpen,identity,acceptDraft){
+  const pair = codexPair(), input = form.querySelector("#f-catalog-search");
+  if (!pair || !input) return () => null;
+  const name = form.querySelector("#f-name"), brand = form.querySelector("#f-brand"), conc = form.querySelector("#f-conc");
+  const status = form.querySelector("#f-codex-status"), results = form.querySelector("#f-codex-results");
+  let timer, current;
+  const message = text => { status.textContent = text; status.hidden = !text; };
+  function schedule(e){
+    if (e.isComposing || !formIsOpen()) return;
+    clearTimeout(timer);
+    const fromName = e.target !== input;
+    const query = (fromName ? name : input).value.trim();
+    const anchor = fromName ? name : form.querySelector("#f-catalog-guide");
+    anchor.after(status,results);
+    results.replaceChildren();
+    const requested = fromName ? identity() : null;
+    const terms = catalogSearchRequest(query).terms;
+    if (query.length < 3 || !terms.length) { current = null; message(""); return; }
+    const key = JSON.stringify([searchText(query),requested?.brand,requested?.conc]);
+    const previous = current;
+    if (previous?.key === key && previous.promise) return;
+    const job = {key,query,brand:requested?.brand || "",conc:requested?.conc || "",profiles:[]};
+    current = job;
+    message("準備用 Codex 查詢…");
+    timer = setTimeout(() => {
+      if (!formIsOpen() || current !== job) return;
+      message("Codex 正在核對品名與版本，可先查閱下方結果或儲存。");
+      job.promise = readCodexPerfumes(pair,job.query,job.brand,job.conc);
+      job.promise.then(profiles => {
+        job.profiles = profiles;
+        if (!formIsOpen() || current !== job) return;
+        const entry = identity();
+        const requestedTerms = catalogSearchRequest(query).terms.join(" ");
+        const exact = profiles.filter(profile => {
+          const product = catalogQueryText(catalogName(profile.name)), house = catalogQueryText(profile.brand);
+          return [product,house+" "+product,product+" "+house].includes(requestedTerms);
+        });
+        const typedConc = catalogSearchRequest(query).concentrations[0] || catalogConc(job.conc);
+        const selected = entry.brand && entry.name && entry.conc ? matchingCodexProfile(profiles,entry) :
+          exact.length === 1 && (profiles.length === 1 || (typedConc && catalogConc(exact[0].conc) === typedConc)) ? exact[0] : null;
+        if (selected && (!entry.brand || catalogText(remoteCatalogQuery(entry.brand)) === catalogText(selected.brand)) &&
+            (!entry.conc || catalogConc(entry.conc) === catalogConc(selected.conc)) &&
+            acceptDraft(selected,false,true)) {
+          message(`Codex 已補入 ${selected.name} · ${selected.conc} 的資料。`);
+          return;
+        }
+        message(profiles.length ? "Codex 找到以下版本。請選你要新增的那一款。" : "Codex 找不到可核對的版本，可先儲存。");
+        results.innerHTML = profiles.map((profile,i) => `<button type="button" class="catalog-choice" data-codex-choice="${i}">
+          <span>${esc(profile.name)}</span><span class="small muted">${esc(profile.brand)} · ${esc(profile.conc)}</span></button>`).join("");
+      }).catch(error => {
+        if (!formIsOpen() || current !== job) return;
+        message(error.message === "pair" ? "Codex 配對已失效，請到設定重新配對。" :
+          error.message === "busy" ? "Codex 正在查其他香水，請稍後再試。" : "暫時連不到 Codex，可先用目前的資料儲存。");
+      });
+    },950);
+  }
+  for (const field of [input,name]) {
+    field.addEventListener("input",schedule);
+    field.addEventListener("compositionend",schedule);
+  }
+  for (const field of [brand,conc]) field.addEventListener("change",schedule);
+  results.addEventListener("click",e => {
+    const choice = e.target.closest("[data-codex-choice]");
+    const profile = choice && current?.profiles[Number(choice.dataset.codexChoice)];
+    if (profile && acceptDraft(profile,true,true) && formIsOpen()) {
+      results.replaceChildren();
+      message(`Codex 已補入 ${profile.name} · ${profile.conc} 的資料。`);
+    }
+  });
+  return () => { clearTimeout(timer); return current?.promise || null; };
 }
 function matchingBottle(p){
   if (!p.brand || !p.name) return null;
@@ -2099,7 +2227,7 @@ function srcHint(url){
 }
 function editSheet(id,draft=null){
   const catalogFields = ["brand","name","conc","families","aliases","accords","notes","seasons","strength","longevity",
-    "occ","source","catalogSource","catalogImage","catalogRevision","fragranticaRating","votes","memo","own","triedOn"];
+    "occ","source","catalogSource","catalogImage","codexImage","codexImageSource","catalogRevision","fragranticaRating","votes","memo","own","triedOn"];
   const p = id ? byId(id) : Object.assign(
     {brand:"", name:"", conc:"", families:[], notes:"", occ:[], rating:null, remaining:null,
       own:["wish","tried"].includes(S.stock) ? S.stock : ""},
@@ -2122,7 +2250,10 @@ function editSheet(id,draft=null){
         <label for="f-catalog-search">搜尋品牌或香水</label>
         <input id="f-catalog-search" type="search" placeholder="例如 Purpose 50、Aventus Cologne" autocomplete="off"
           aria-controls="f-catalog-results" aria-describedby="f-catalog-guide">
-        <span class="small muted" id="f-catalog-guide">輸入品名後會自動查資料。同名有不同版本時，可選你手上的那款。</span>
+        <span class="small muted" id="f-catalog-guide">${codexPair() ? "輸入品名後會自動請 Codex 核對版本。" :
+          "輸入品名後會自動查資料。Codex 搜尋可在設定配對後使用。"}</span>
+        <div class="small muted" id="f-codex-status" role="status" hidden></div>
+        <div class="catalog-results" id="f-codex-results"></div>
         <div class="small muted" id="f-catalog-status" role="status" hidden></div>
         <div class="catalog-results" id="f-catalog-results"></div>
       </div>`}
@@ -2177,10 +2308,12 @@ function editSheet(id,draft=null){
   let pending = null;
   const formIsOpen = () => form.isConnected && !$("#sheet").hidden;
   const editedFields = new Set();
-  wireCatalogSearch(formIsOpen,(profile,explicit) => {
+  let codexResolved = !!draft?.codexResolved;
+  const acceptDraft = (profile,explicit,fromCodex=false) => {
     if (p.conc && versionKey(profile) !== originalKey) {
       if (explicit) editSheet(null,{...profile,memo:$("#f-memo").value,
-        own:document.querySelector("#f-own .chip[aria-pressed='true']")?.dataset.v || "",triedOn:$("#f-tried").value});
+        own:document.querySelector("#f-own .chip[aria-pressed='true']")?.dataset.v || "",
+        triedOn:$("#f-tried").value,codexResolved:fromCodex});
       return false;
     }
     const v = (selector,value) => {
@@ -2194,8 +2327,14 @@ function editSheet(id,draft=null){
         chip.setAttribute("aria-pressed",String(values.includes(chip.dataset.v)));
       }
     };
+    const oldSource = $("#f-src").value || p.source;
     for (const key of catalogFields) {
       if (["memo","own","triedOn"].includes(key) || !(key in profile)) continue;
+      if (key === "fragranticaRating" && fromCodex && oldSource &&
+          fragranticaId(oldSource) !== fragranticaId(profile.source)) continue;
+      if (!["brand","name","conc"].includes(key) && (fromCodex || (!explicit && codexResolved)) &&
+          p[key] != null && p[key] !== "" && !(Array.isArray(p[key]) && !p[key].length)) continue;
+      if (!explicit && (profile[key] == null || profile[key] === "")) continue;
       p[key] = profile[key];
     }
     originalKey = versionKey(p);
@@ -2218,8 +2357,11 @@ function editSheet(id,draft=null){
     chips("#f-sea",Object.keys(p.seasons || {}).filter(key => p.seasons[key] >= NEUTRAL_SUITABILITY));
     chips("#f-occ",p.occ?.length ? p.occ : suggestOcc(p));
     updateDuplicate(identity());
+    if (fromCodex) codexResolved = true;
     return true;
-  });
+  };
+  wireCatalogSearch(formIsOpen,acceptDraft);
+  const pendingCodex = wireCodexLookup(form,formIsOpen,identity,acceptDraft);
   function frigPhotoPreview(){
     const source = $("#f-src").value;
     return source || p.catalogImage ? photo(source === (p.source || "") ? p : {source},"ph-sm") : "";
@@ -2311,13 +2453,13 @@ function editSheet(id,draft=null){
         updateDuplicate(requested);
         return;
       }
-      await submitForm(p,version);
+      await submitForm(p,version,pendingCodex() || (codexResolved && !changed ? Promise.resolve([]) : null));
     } finally {
       submit.disabled = false;
     }
   });
 }
-async function submitForm(orig,version){
+async function submitForm(orig,version,codexJob=null){
   const v = id => $(id).value.trim();
   const n = id => { const value = $(id).valueAsNumber; return Number.isFinite(value) ? value : null; };
   const picked = sel => [...document.querySelectorAll(sel+" .chip[aria-pressed='true']")].map(b => b.dataset.v);
@@ -2363,6 +2505,37 @@ async function submitForm(orig,version){
   if (!orig.id || version || p.source !== orig.source) {
     void enrichSavedPerfume(id).then(() => enrichBottlePhoto(id));
   }
+  if (!orig.id && codexPair()) void enrichSavedWithCodex(id,codexJob);
+}
+
+async function enrichSavedWithCodex(id,pending){
+  const initial = byId(id), pair = codexPair();
+  if (!initial?.conc || !pair) return;
+  try {
+    const profiles = await (pending || readCodexPerfumes(pair,initial.name,initial.brand,initial.conc));
+    const profile = matchingCodexProfile(profiles,initial);
+    const current = byId(id);
+    if (!profile || !current || codexVersionKey(current) !== codexVersionKey(initial)) return;
+    const updated = {...current};
+    for (const field of ["notes","catalogSource","source","fragranticaRating","codexImage","codexImageSource"]) {
+      if (updated[field] != null && updated[field] !== "") continue;
+      if (!profile[field]) continue;
+      if (field === "catalogSource" && updated.notes !== profile.notes) continue;
+      if (field === "codexImageSource" && updated.codexImage !== profile.codexImage) continue;
+      if (field === "fragranticaRating" && updated.source && fragranticaId(updated.source) !== fragranticaId(profile.source)) continue;
+      if (["codexImage","codexImageSource"].includes(field) && (updated.photo || updated.catalogImage || updated.bottleCutout)) continue;
+      updated[field] = profile[field];
+    }
+    if (JSON.stringify(updated) === JSON.stringify(current)) return;
+    await Store.savePerfume(updated);
+    if (viewingPerfume(id)) {
+      const scroll = $("#sheet-scroll").scrollTop;
+      detailSheet(id);
+      $("#sheet-scroll").scrollTop = scroll;
+    }
+    void enrichBottlePhoto(id);
+    toast("Codex 已補齊香水資料");
+  } catch { /* An offline bridge never blocks saving. */ }
 }
 
 async function enrichSavedPerfume(id){
@@ -2484,6 +2657,25 @@ document.addEventListener("submit", e => {
   renderToday();
   ($("#intent-form [data-act='intent-apply']") || $("#intent-input"))?.focus();
 });
+document.addEventListener("submit", async e => {
+  const form = e.target;
+  if (form.id !== "codex-pair-form") return;
+  e.preventDefault();
+  const button = form.querySelector("button"), status = form.querySelector("[role='status']");
+  const show = message => { status.textContent = message; status.hidden = false; };
+  const pair = globalThis.PerfumeCodex?.pairCode(form.querySelector("input").value);
+  if (!pair) { show("配對碼格式不對，請重新複製電腦上的配對碼。"); return; }
+  button.disabled = true;
+  show("正在連接電腦上的 Codex…");
+  try {
+    const response = await PerfumeCodex.request(pair,"/status");
+    if (response.ready !== true) throw new Error("connection");
+    lsSet(CODEX_PAIR,pair);
+    if (form.isConnected) { renderPrefs(); toast("Codex 已配對"); }
+  } catch (error) {
+    show(error.message === "pair" ? "配對碼已失效，請使用最新的配對碼。" : "連不到電腦，請確認橋接程式已開啟。");
+  } finally { button.disabled = false; }
+});
 document.addEventListener("input", e => {
   if (e.target.id !== "intent-input") return;
   S.intentInput = e.target.value;
@@ -2511,6 +2703,9 @@ document.addEventListener("click", async e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
   const a = b.dataset.act, v = b.dataset.v, id = b.dataset.id;
   switch (a) {
+    case "codex-disconnect":
+      lsSet(CODEX_PAIR,null); renderPrefs(); toast("已解除 Codex 配對");
+      break;
     case "temp": S.ctx.temp = Math.max(-5, Math.min(42, S.ctx.temp + Number(v))); S.ctx.guessed = false; S.ctx.src = "manual"; S.ctx.manual = true; saveCtx(); resetRecommendationChoices(); render(); break;
     case "wet": S.ctx.wet = !S.ctx.wet; S.ctx.src = "manual"; S.ctx.manual = true; saveCtx(); resetRecommendationChoices(); render(); break;
     case "occ":
