@@ -179,6 +179,12 @@ body.sheet-open{position:fixed;left:0;right:0;width:100%;overflow:hidden}
 .stock-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .stock-action{min-height:44px;padding-inline:12px}
 .catalog-results{display:grid;gap:5px}
+.intent-panel{margin:10px 0 14px}
+.intent-panel form{display:grid;gap:10px;padding:0 12px 12px}
+.intent-panel .intent-inline{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.intent-panel .intent-inline input[type=search]{flex:1;min-width:180px}
+.intent-panel .intent-inline label{display:inline-flex;align-items:center;gap:5px}
+.intent-panel .intent-inline input[type=checkbox]{accent-color:var(--accent)}
 .catalog-choice{display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:44px;width:100%;border:1px solid var(--line);border-radius:10px;background:var(--bg);text-align:left;padding:8px 10px}
 .catalog-choice span{min-width:0;overflow-wrap:anywhere}
 .catalog-result-row{display:flex;align-items:center;gap:10px}
@@ -371,6 +377,7 @@ html,body{margin:0}
 </div>
 <div class="toast" id="toast" role="status" hidden></div>
 
+<script src="./enrichment.js"></script>
 <script>
 (() => {
 "use strict";
@@ -462,8 +469,8 @@ function readWeatherHash(){
 }
 
 const todayWeather = () => (S.weather && S.weather.date === TODAY) ? S.weather : null;
-function weatherForOcc(w,occ){
-  const prefix = isNightOcc(occ) ? "night" : "day";
+function weatherForOcc(w,occ,period){
+  const prefix = period || (isNightOcc(occ) ? "night" : "day");
   const temp = w[prefix+"Feels"];
   const label = prefix === "night" ? "晚上體感溫度" : "白天體感溫度";
   // 讓上一版的快取可用到下一次天氣更新。
@@ -475,7 +482,7 @@ function weatherForOcc(w,occ){
 function applyWeather(){
   const w = todayWeather();
   if (!w) return;
-  const {temp,rain,humidity} = weatherForOcc(w,S.ctx.occ);
+  const {temp,rain,humidity} = weatherForOcc(w,S.ctx.intent?.occ || S.ctx.occ,S.ctx.intent?.period);
   const next = {temp:Math.round(num(temp,S.ctx.temp)),wet:num(rain,0) >= 50 || num(humidity,0) >= 90,
     guessed:!Number.isFinite(temp),src:"auto"};
   if (next.temp !== S.ctx.temp || next.wet !== S.ctx.wet) resetRecommendationChoices();
@@ -892,7 +899,9 @@ function sprayAdvice(p, ctx){
   return {range:"2–3", reason:`擴散${diffusion}，先從 2 下開始`};
 }
 function recommend(today, ctx){
-  const t = ctx.temp, night = isNightOcc(ctx.occ);
+  const intent = ctx.intent;
+  if (intent?.occ) ctx = {...ctx,occ:intent.occ};
+  const t = ctx.temp, night = intent?.period ? intent.period === "night" : isNightOcc(ctx.occ);
   const weights = Object.entries(seasonWeights(today, t));
   const totalWeight = weights.reduce((sum,[,weight]) => sum + weight,0);
   const suitability = value => Math.max(0,Math.min(100,num(value,NEUTRAL_SUITABILITY)));
@@ -946,6 +955,32 @@ function recommend(today, ctx){
     const r = Math.max(1,Math.min(5,num(p.rating,3))), ratingScore = (r-3) * .7;
     s += ratingScore;
     if (r >= 5) why.push([ratingScore, "你給它滿分"]); else if (r >= 4) why.push([ratingScore, "你的高分愛用款"]);
+    if (intent) {
+      if (Number.isFinite(p.strength) && intent.diffusion) {
+        const diffusionScore = (p.strength-3) * (intent.diffusion === "low" ? -1 : 1) * 1.45;
+        s += diffusionScore;
+        if (diffusionScore > .5) why.push([diffusionScore,intent.diffusion === "low" ? "符合低擴散偏好" : "香氣較有存在感"]);
+      }
+      const keys = p.accords?.length ? p.accords.map(([family]) => family) : (p.families || []);
+      if (keys.length && (intent.prefer?.length || intent.avoid?.length)) {
+        const groups = {
+          sweet:["sweet","vanilla"], floral:["floral","rose","whitefloral","yellowfloral","lavender"],
+          spicy:["spicy","freshspicy","softspicy","warmspicy"], woody:["woody","vetiver"]
+        };
+        const share = family => {
+          if (family === "fresh") return profile(p)?.fresh || 0;
+          const wanted = groups[family] || [family];
+          const index = keys.findIndex(k => wanted.includes(k));
+          return index < 0 ? 0 : 1 / (1 + index*.33);
+        };
+        for (const family of intent.prefer || []) {
+          const bonus = 2.7*share(family);
+          s += bonus;
+          if (bonus >= 1) why.push([bonus,`符合你想要的${FAM[family]}調`]);
+        }
+        for (const family of intent.avoid || []) s -= 4.5*share(family);
+      }
+    }
     s += jitter(today + p.id) * .8;
     if (!why.length) why.push([0, "綜合今天的天氣與場合排序"]);
     why.sort((a,b) => b[0]-a[0]);
@@ -1000,6 +1035,7 @@ function fragranticaId(source){
 }
 function imgUrl(p){
   if (p.photo) return p.photo;
+  if (/^data:image\/(?:webp|png);base64,[a-z\d+/=]+$/i.test(p.bottleCutout || "")) return p.bottleCutout;
   if (/^bottles\/[a-z\d-]+\.jpg$/.test(p.catalogImage || "")) return "./" + p.catalogImage;
   const id = fragranticaId(p.source);
   if (id) return `https://fimgs.net/mdimg/perfume/375x500.${id}.jpg`;
@@ -1039,9 +1075,69 @@ function noteList(notes){
 }
 const BOTTLE_MASKS = new Set(["17","468","1826","3962","4023","4774","8282","9099","25967","34696","43402","49099","49751","49754",
   "49912","51692","52002","55040","64105","65738","67370","68627","75182","89146","113429","127045"]);
+const PREPARED_BOTTLES = new Set(["purpose-edp","purpose-50","aventus-edp"]);
+function preparedBottle(url){
+  const cutout = url?.match(/^\.\/bottles\/([a-z\d-]+)\.jpg$/)?.[1];
+  return PREPARED_BOTTLES.has(cutout) || BOTTLE_MASKS.has(url?.match(/\.(\d+)\.jpg$/)?.[1]);
+}
+function preparePhoto(image){
+  const width = image.naturalWidth || image.width, height = image.naturalHeight || image.height;
+  const scale = Math.min(1,420 / Math.max(width,height));
+  const cv = document.createElement("canvas");
+  cv.width = Math.max(1,Math.round(width*scale)); cv.height = Math.max(1,Math.round(height*scale));
+  const context = cv.getContext("2d",{willReadFrequently:true});
+  context.drawImage(image,0,0,cv.width,cv.height);
+  const pixels = context.getImageData(0,0,cv.width,cv.height);
+  const removed = PerfumeEnrichment.removeBottleBackground(pixels.data,cv.width,cv.height);
+  let transparency = removed;
+  if (!transparency) for (let i = 3; i < pixels.data.length; i += 4) {
+    if (pixels.data[i] < 255) { transparency = true; break; }
+  }
+  if (removed) {
+    let left = cv.width, top = cv.height, right = 0, bottom = 0;
+    for (let y = 0; y < cv.height; y++) for (let x = 0; x < cv.width; x++) {
+      if (!pixels.data[(y*cv.width+x)*4+3]) continue;
+      left = Math.min(left,x); top = Math.min(top,y); right = Math.max(right,x); bottom = Math.max(bottom,y);
+    }
+    cv.width = right-left+5; cv.height = bottom-top+5;
+    context.putImageData(pixels,2-left,2-top,left,top,right-left+1,bottom-top+1);
+  }
+  return {transparent:transparency,
+    url:transparency ? cv.toDataURL("image/webp",.82) : cv.toDataURL("image/jpeg",.8)};
+}
+function loadPhoto(url, cors = false){
+  return new Promise((resolve,reject) => {
+    const image = new Image();
+    if (cors) image.crossOrigin = "anonymous";
+    const timer = setTimeout(() => { image.removeAttribute("src"); reject(new Error("Photo timeout")); },5000);
+    image.onload = () => { clearTimeout(timer); resolve(image); };
+    image.onerror = () => { clearTimeout(timer); reject(new Error("Photo unavailable")); };
+    image.src = url;
+  });
+}
+function viewingPerfume(id){
+  return !$("#sheet").hidden && $("#sheet-scroll [data-act='edit']")?.dataset.id === id;
+}
+async function enrichBottlePhoto(id){
+  const orig = byId(id), url = orig && imgUrl(orig);
+  if (!url || orig.photo || orig.bottleCutout || preparedBottle(url)) return;
+  try {
+    const {transparent,url:cutout} = preparePhoto(await loadPhoto(url,true));
+    const current = byId(id);
+    if (!transparent || cutout.length > 160000 || !current || imgUrl(current) !== url || current.photo || current.bottleCutout) return;
+    const isOpen = viewingPerfume(id);
+    await Store.savePerfume({...current,bottleCutout:cutout});
+    if (isOpen && viewingPerfume(id)) {
+      $("#bottle-photo-status").textContent = "瓶照已去背";
+      const hero = $("#sheet-scroll .pick-top .ph");
+      if (hero) hero.outerHTML = photo({...current,bottleCutout:cutout},"ph-lg","eager");
+    }
+  } catch { /* Some sources only allow display. Keep the original and offer a local image. */ }
+}
 function photo(p, cls, loading = "lazy"){
   const url = imgUrl(p);
-  const cutout = url?.match(/^\.\/bottles\/([a-z\d-]+)\.jpg$/)?.[1];
+  const basename = url?.match(/^\.\/bottles\/([a-z\d-]+)\.jpg$/)?.[1];
+  const cutout = PREPARED_BOTTLES.has(basename) ? basename : "";
   const imageId = !p.photo && url?.match(/\.(\d+)\.jpg$/)?.[1];
   const mask = BOTTLE_MASKS.has(imageId) ? ` data-masked style="--bottle-mask:url('./bottle-masks/${imageId}.png')"` : "";
   return `<span class="ph ${cls}">${url ? `<img src="${esc(url)}" alt="" loading="${loading}" decoding="async"${mask}${cutout ? ` data-cutout="${esc(cutout)}"` : ""} onerror="this.remove()">` : ""}</span>`;
@@ -1090,7 +1186,7 @@ function emptyState(){
 function renderWeather(){
   const w = todayWeather(), c = S.ctx;
   const open = $("#weather-details")?.open ? " open" : "";
-  const reading = w ? weatherForOcc(w,c.occ) : null;
+  const reading = w ? weatherForOcc(w,c.intent?.occ || c.occ,c.intent?.period) : null;
   const tempLabel = c.guessed ? "估算氣溫" : reading?.label || "氣溫";
   const percent = value => Number.isFinite(value) ? value+"%" : "—";
   // 收起時就看得到：溫度 · 天氣 · 降雨機率 · 鄉鎮
@@ -1115,11 +1211,41 @@ function renderWeather(){
   </details>`;
 }
 
+function intentConditions(intent = {}){
+  const {occ,period,diffusion,prefer=[],avoid=[]} = intent;
+  return [
+    ...(occ ? [["occ",occ,OCC[occ]]] : []),
+    ...(period ? [["period",period,SEASON[period]]] : []),
+    ...(diffusion ? [["diffusion",diffusion,diffusion === "low" ? "低擴散" : "擴散較強"]] : []),
+    ...prefer.map(family => ["prefer",family,`偏好${FAM[family]}`]),
+    ...avoid.map(family => ["avoid",family,`少一點${FAM[family]}`])
+  ];
+}
+function renderIntent(){
+  const open = $("#intent-panel")?.open || S.intentPreview || S.ctx.intent;
+  const active = intentConditions(S.ctx.intent);
+  const pending = S.intentPreview && intentConditions(S.intentPreview);
+  return `<details class="disclosure intent-panel" id="intent-panel"${open ? " open" : ""}>
+    <summary>一句話選香${active.length ? ` <span class="small muted">· 已套用 ${active.length} 個條件</span>` : ""}</summary>
+    <form id="intent-form">
+      <div class="intent-inline"><input class="search" id="intent-input" type="search" aria-label="用一句話描述今天想噴的香水"
+        maxlength="180" value="${esc(S.intentInput)}" placeholder="例：今晚約會，想低調一點，別太甜" required>
+        <button class="btn ghost" type="submit">解析條件</button></div>
+      ${pending ? pending.length ? `<div class="intent-inline" data-intent-preview aria-label="確認選香條件">${pending.map(([key,value,label]) =>
+        `<label class="chip"><input type="checkbox" name="${key}" value="${value}" checked>${label}</label>`).join("")}</div>
+        <div data-intent-preview><button class="btn primary" type="button" data-act="intent-apply">套用條件</button></div>` :
+        '<div class="small muted" data-intent-preview role="status">還讀不出選香條件，可以加上場合、時段、擴散或香調。</div>' : ""}
+      ${active.length ? `<div class="intent-inline"><span class="small">已套用 ${active.map(([, ,label]) => label).join("、")}</span>
+        <button class="btn ghost" type="button" data-act="intent-clear">清除</button></div>` : ""}
+    </form>
+  </details>`;
+}
 function renderToday(){
-  const el = $("#v-today"), c = S.ctx;
+  const el = $("#v-today"), c = {...S.ctx,occ:S.ctx.intent?.occ || S.ctx.occ};
   const occChips = Object.entries(OCC).map(([k,v]) => `<button class="chip" data-act="occ" data-v="${k}" aria-pressed="${c.occ===k}">${v}</button>`).join("");
   let html = renderWeather() + `<div class="occasions" role="group" aria-label="今天的場合">${occChips}</div>`;
   if (!S.perfumes.length) { el.innerHTML = html + emptyState(); return; }
+  html += renderIntent();
 
   const recs = recommend(TODAY, c);
   const todayWears = wearsOn(TODAY);
@@ -1555,10 +1681,13 @@ function detailSheet(id){
       </div>
     </details>
     <div class="chips photo-controls">
-      <label class="chip" for="photo-in">${p.photo ? "換一張照片" : "換成我拍的照片"}</label>
+      <label class="chip" for="photo-in">${p.photo ? "更換瓶照並去背" : "上傳瓶照並去背"}</label>
       <input type="file" id="photo-in" accept="image/*" data-id="${esc(id)}" hidden>
       ${p.photo ? `<button class="chip" data-act="unphoto" data-id="${esc(id)}">改回原本圖片</button>` : ""}
-    </div>`);
+    </div>
+    <div class="small muted" id="bottle-photo-status" role="status">${!imgUrl(p) ?
+      "目前沒有可確認的瓶照。" : (p.photo ? p.photoTransparent : p.bottleCutout || preparedBottle(imgUrl(p))) ?
+        "瓶照已去背" : "有白色背景的瓶照可上傳，自動去背。"}</div>`);
 }
 
 function fragranticaSearch(brand, name){
@@ -1676,7 +1805,7 @@ async function lookupPerfumeVersion(requested){
     const answer = await readScento("/perfumes/"+encodeURIComponent(name));
     return scentoProfile(answer,requested);
   };
-  const direct = await checkPortrait(title+" "+conc);
+  const direct = await checkPortrait(title+" "+conc).catch(() => null);
   if (direct) {
     versionCache.set(key,direct);
     return direct;
@@ -1686,7 +1815,7 @@ async function lookupPerfumeVersion(requested){
     catalogText(item.house) === brand && catalogName(item.name) === title);
   const terms = [...new Set(alternatives.map(item =>
     item.page?.match(/^https:\/\/www\.scento\.com\/perfumes\/([a-z\d-]+)$/i)?.[1] || item.name))].slice(0,3);
-  const results = (await Promise.all(terms.map(checkPortrait))).filter(Boolean);
+  const results = (await Promise.all(terms.map(term => checkPortrait(term).catch(() => null)))).filter(Boolean);
   const match = results.length === 1 ? results[0] : null;
   if (match) versionCache.set(key,match);
   return match;
@@ -1694,7 +1823,7 @@ async function lookupPerfumeVersion(requested){
 
 function applyPerfumeVersion(p,version){
   // 舊版的資料與數值不可沿用；個人評分、剩量、備註、自訂照片、紀錄 ID 由原品項保留。
-  for (const key of ["votes","seasons","tMin","tMax"]) delete p[key];
+  for (const key of ["votes","seasons","tMin","tMax","bottleCutout"]) delete p[key];
   Object.assign(p, {
     name:version.name, conc:version.conc, notes:version.notes || "",
     source:version.source || "", catalogSource:version.catalogSource || "", catalogImage:version.catalogImage || "",
@@ -1828,22 +1957,43 @@ async function loadCatalogChoice(choice){
     return draft;
   }
 }
-function wireCatalogSearch(formIsOpen){
+function wireCatalogSearch(formIsOpen, acceptDraft){
   const input = $("#f-catalog-search");
   if (!input) return;
   const results = $("#f-catalog-results"), status = $("#f-catalog-status");
+  const nameInput = $("#f-name"), brandInput = $("#f-brand"), concInput = $("#f-conc");
   const cache = new Map();
   let timer, generation = 0, choices = [];
-  function show(query,online=[], message=""){
+  const fields = () => [brandInput.value,nameInput.value,concInput.value].join("\n");
+  const lookup = async (choice,selected,button) => {
+    if (button) button.disabled = true;
+    status.textContent = "正在帶入香水資料…";
+    status.hidden = false;
+    const before = fields();
+    const draft = await loadCatalogChoice(choice);
+    if (button) button.disabled = false;
+    if (!formIsOpen() || generation !== selected || fields() !== before) return;
+    if (!button && (!draft.conc || !(draft.notes || draft.source || draft.catalogSource || draft.catalogImage))) {
+      status.textContent = "選取結果確認版本，或填寫資料後儲存。";
+      return;
+    }
+    if (!acceptDraft(draft,!!button) || !formIsOpen()) return;
+    status.textContent = draft.notes || draft.source || draft.catalogSource ?
+      `已帶入 ${draft.name} · ${concentrationLabel(draft.conc)}` : "已填入品名。可補上濃度或其他資料。";
+    if (button) results.innerHTML = "";
+  };
+  function show(query,online=[],message="",requested=null){
     const local = searchLocalCatalog(query), brands = new Map(local.brands.map(brand => [catalogText(brand),brand]));
     const request = catalogSearchRequest(query);
-    const perfumes = local.perfumes.map(p => ({name:p.name,brand:p.brand,conc:p.conc,local:p}));
+    const brand = requested?.brand;
+    const sameBrand = value => !brand || catalogText(remoteCatalogQuery(brand)) === catalogText(value);
+    const perfumes = local.perfumes.filter(p => sameBrand(p.brand)).map(p => ({name:p.name,brand:p.brand,conc:p.conc,local:p}));
     const ranked = online.map(entry => ({entry,cost:catalogMatchCost(request,[entry.name,entry.house,
       ...(CATALOG_BRAND_ALIASES[brandAlias(entry.house || entry.name)] || [])])}))
       .filter(result => Number.isFinite(result.cost)).sort((a,b) => a.cost-b.cost);
     for (const {entry} of ranked) {
       if (entry.kind === "house" && entry.name && !request.concentrations.length) brands.set(catalogText(entry.name),entry.name);
-      if (entry.kind !== "perfume" || !entry.name || !entry.house) continue;
+      if (entry.kind !== "perfume" || !entry.name || !entry.house || !sameBrand(entry.house)) continue;
       const suffix = searchText(entry.name).match(VERSION_SUFFIX)?.[1];
       const knownConc = catalogConc(entry.concentration || suffix);
       if (request.concentrations.length > 1 ||
@@ -1863,37 +2013,63 @@ function wireCatalogSearch(formIsOpen){
     </button>`).join("");
     status.textContent = message || (choices.length ? "" : "找不到相符的香水。填寫品牌與名稱即可儲存。");
     status.hidden = !status.textContent;
+    return perfumes;
   }
-  function update(immediate){
+  function finish(query,online,requested,sequence,message=""){
+    const perfumes = show(query,online,message,requested);
+    const request = catalogSearchRequest(query);
+    if (request.concentrations.length > 1) return;
+    const candidates = perfumes.filter(choice => catalogMatchCost(request,catalogSearchFields(choice.local || choice)) === 0 ||
+      (!choice.local && catalogMatchCost(catalogSearchRequest(remoteSearchPhrase(query)),[choice.name,choice.brand]) === 0));
+    const exact = candidates.filter(p => {
+      const brand = catalogQueryText(p.brand);
+      const names = [catalogName(p.name),...(p.local?.aliases || [])].map(catalogQueryText);
+      return names.some(name => name && [name,brand+" "+name,name+" "+brand].includes(request.terms.join(" ")));
+    });
+    const specified = request.concentrations[0];
+    const choice = specified && exact.length === 1 && catalogConc(exact[0].conc) === specified ? exact[0] :
+      PerfumeEnrichment.exactChoice(candidates,exact);
+    if (choice) void lookup(choice,sequence);
+  }
+  function update(immediate,fromName=false){
     clearTimeout(timer);
     const requested = ++generation;
-    const query = input.value.trim();
-    if (!searchText(query) || (query.length < 2 && !/\p{Script=Han}/u.test(query))) {
+    const selection = fromName ? {brand:brandInput.value.trim(),conc:concInput.value} : null;
+    const value = (fromName ? nameInput : input).value.trim();
+    const query = [value,selection?.conc].filter(Boolean).join(" ");
+    const anchor = fromName ? nameInput : $("#f-catalog-guide");
+    if (anchor.nextElementSibling !== status) anchor.after(status,results);
+    if (!searchText(value) || (value.length < 2 && !/\p{Script=Han}/u.test(value))) {
       choices = []; results.innerHTML = ""; status.hidden = true;
       return;
     }
-    const phrase = remoteSearchPhrase(query);
+    const phrase = remoteSearchPhrase([selection?.brand,query].filter(Boolean).join(" "));
     const key = searchText(phrase);
     if (cache.has(key)) {
-      show(query,cache.get(key));
+      finish(query,cache.get(key),selection,requested);
       return;
     }
     const {perfumes} = searchLocalCatalog(query);
-    show(query,[],perfumes.length ? "" : "正在搜尋香水資料…");
+    show(query,[],perfumes.length ? "" : "正在搜尋香水資料…",selection);
     timer = setTimeout(async () => {
       try {
         const response = await readScento("/search?"+new URLSearchParams({q:phrase,kind:"any"}));
         const online = Array.isArray(response.detail?.matches) ? response.detail.matches : [];
         cache.set(key,online);
-        if (formIsOpen() && generation === requested) show(query,online);
+        if (formIsOpen() && generation === requested) finish(query,online,selection,requested);
       } catch {
         if (formIsOpen() && generation === requested) {
-          show(query,[],perfumes.length ? "" : "線上搜尋暫時無法使用。填寫品牌與名稱即可儲存。");
+          finish(query,[],selection,requested,perfumes.length ? "" : "線上搜尋暫時無法使用。填寫品牌與名稱即可儲存。");
         }
       }
     },immediate ? 0 : 320);
   }
-  input.addEventListener("input", () => update(false));
+  input.addEventListener("input", e => { if (!e.isComposing) update(false); });
+  nameInput.addEventListener("input", e => { if (!e.isComposing) update(false,true); });
+  input.addEventListener("compositionend", () => update(false));
+  nameInput.addEventListener("compositionend", () => update(false,true));
+  brandInput.addEventListener("change", () => { if (nameInput.value.trim()) update(false,true); });
+  concInput.addEventListener("change", () => { if (nameInput.value.trim()) update(false,true); });
   input.addEventListener("keydown", e => {
     if (e.key === "Enter") { e.preventDefault(); update(true); }
   });
@@ -1911,18 +2087,7 @@ function wireCatalogSearch(formIsOpen){
       status.hidden = false;
       return;
     }
-    button.disabled = true;
-    status.textContent = "正在帶入香水資料…";
-    status.hidden = false;
-    const fields = () => [$("#f-brand").value,$("#f-name").value,$("#f-conc").value].join("\n");
-    const before = fields();
-    const draft = await loadCatalogChoice(choice);
-    button.disabled = false;
-    if (formIsOpen() && generation === selected) {
-      status.hidden = true;
-      if (fields() === before) editSheet(null,Object.assign({},draft,{memo:$("#f-memo").value,
-        own:document.querySelector("#f-own .chip[aria-pressed='true']")?.dataset.v || "", triedOn:$("#f-tried")?.value}));
-    }
+    await lookup(choice,selected,button);
   });
 }
 
@@ -1955,7 +2120,9 @@ function editSheet(id,draft=null){
     <form id="pform" data-id="${esc(p.id)}" class="perfume-form">
       ${id ? "" : `<div class="field">
         <label for="f-catalog-search">搜尋品牌或香水</label>
-        <input id="f-catalog-search" type="search" placeholder="例如 愛馬仕、大地、Aventus" autocomplete="off" aria-controls="f-catalog-results">
+        <input id="f-catalog-search" type="search" placeholder="例如 Purpose 50、Aventus Cologne" autocomplete="off"
+          aria-controls="f-catalog-results" aria-describedby="f-catalog-guide">
+        <span class="small muted" id="f-catalog-guide">輸入品名後會自動查資料。同名有不同版本時，可選你手上的那款。</span>
         <div class="small muted" id="f-catalog-status" role="status" hidden></div>
         <div class="catalog-results" id="f-catalog-results"></div>
       </div>`}
@@ -1969,7 +2136,7 @@ function editSheet(id,draft=null){
         `<button type="button" class="chip" data-act="fown" data-v="${k}" aria-pressed="${(p.own || "") === k}">${label}</button>`).join("")}</div></div>
       <div class="field" id="f-tried-field"${p.own === "tried" ? "" : " hidden"}><label for="f-tried">試香日期</label>
         <input type="date" id="f-tried" value="${esc(p.triedOn || TODAY)}"></div>
-      ${lookupEdition ? '<p class="version-status" id="version-status" role="status" hidden></p>' : ""}
+      <p class="version-status" id="version-status" role="status" hidden></p>
       <details class="disclosure form-options">
         <summary>香調與 Fragrantica</summary>
         <div class="form-section">
@@ -2006,10 +2173,57 @@ function editSheet(id,draft=null){
   const versionStatus = $("#version-status");
   const identity = () => ({brand:$("#f-brand").value.trim(),name:$("#f-name").value.trim(),conc:$("#f-conc").value,
     source:$("#f-src").value.trim()});
-  const originalKey = versionKey(p);
+  let originalKey = versionKey(p);
   let pending = null;
   const formIsOpen = () => form.isConnected && !$("#sheet").hidden;
-  wireCatalogSearch(formIsOpen);
+  const editedFields = new Set();
+  wireCatalogSearch(formIsOpen,(profile,explicit) => {
+    if (p.conc && versionKey(profile) !== originalKey) {
+      if (explicit) editSheet(null,{...profile,memo:$("#f-memo").value,
+        own:document.querySelector("#f-own .chip[aria-pressed='true']")?.dataset.v || "",triedOn:$("#f-tried").value});
+      return false;
+    }
+    const v = (selector,value) => {
+      if (value == null || editedFields.has(selector.slice(1))) return;
+      const input = $(selector);
+      if (!input.value) input.value = value;
+    };
+    const chips = (selector,values) => {
+      if (editedFields.has(selector.slice(1))) return;
+      for (const chip of form.querySelectorAll(`${selector} [data-v]`)) {
+        chip.setAttribute("aria-pressed",String(values.includes(chip.dataset.v)));
+      }
+    };
+    for (const key of catalogFields) {
+      if (["memo","own","triedOn"].includes(key) || !(key in profile)) continue;
+      p[key] = profile[key];
+    }
+    originalKey = versionKey(p);
+    if (p.brand) $("#f-brand").value = p.brand;
+    if (p.name) $("#f-name").value = p.name;
+    if (p.conc && ![...$("#f-conc").options].some(option => option.value === p.conc)) {
+      $("#f-conc").add(new Option(concentrationLabel(p.conc),p.conc));
+    }
+    $("#f-conc").value = p.conc || "";
+    $("#f-lookup").href = fragranticaSearch(p.brand,p.name);
+    v("#f-src",p.source);
+    $("#f-src-preview").innerHTML = frigPhotoPreview();
+    $("#f-src-hint").textContent = srcHint($("#f-src").value);
+    v("#f-score",formattedCommunityScore(p));
+    v("#f-str",p.strength);
+    v("#f-lon",p.longevity);
+    const notes = splitNotes(p.notes);
+    for (const [key] of NOTE_FIELDS) v("#f-note-"+key,notes[key]);
+    chips("#f-fam",p.accords?.length ? p.accords.map(([key]) => key) : p.families || []);
+    chips("#f-sea",Object.keys(p.seasons || {}).filter(key => p.seasons[key] >= NEUTRAL_SUITABILITY));
+    chips("#f-occ",p.occ?.length ? p.occ : suggestOcc(p));
+    updateDuplicate(identity());
+    return true;
+  });
+  function frigPhotoPreview(){
+    const source = $("#f-src").value;
+    return source || p.catalogImage ? photo(source === (p.source || "") ? p : {source},"ph-sm") : "";
+  }
   function updateDuplicate(requested){
     const notice = $("#f-duplicate");
     if (!notice) return;
@@ -2051,6 +2265,7 @@ function editSheet(id,draft=null){
     return request.job;
   }
   form.addEventListener("input", e => {
+    editedFields.add(e.target.id);
     if (e.target.id === "f-src") {
       const url = e.target.value.trim();
       $("#f-src-preview").innerHTML = fragranticaId(url) ? photo({source:url}, "ph-sm", "eager") : "";
@@ -2065,8 +2280,12 @@ function editSheet(id,draft=null){
       updateDuplicate(identity());
     }
   });
+  form.addEventListener("click", e => {
+    const group = e.target.closest("#f-fam, #f-sea, #f-occ");
+    if (group && e.target.closest("button")) editedFields.add(group.id);
+  });
   form.addEventListener("change", e => {
-    if (lookupEdition && ["f-brand","f-name","f-conc"].includes(e.target.id)) prepareVersion(identity());
+    if ((lookupEdition || p.conc) && ["f-brand","f-name","f-conc"].includes(e.target.id)) prepareVersion(identity());
   });
   form.addEventListener("invalid", e => {
     const group = e.target.closest("details");
@@ -2075,12 +2294,17 @@ function editSheet(id,draft=null){
   form.addEventListener("submit", async e => {
     e.preventDefault();
     const requested = identity();
+    const suffix = searchText(requested.name).match(VERSION_SUFFIX)?.[1];
+    if (suffix && requested.conc && catalogConc(suffix) !== catalogConc(requested.conc)) {
+      report("品名裡的濃度與下拉選擇不同，請確認版本。");
+      return;
+    }
     const key = versionKey(requested);
     const submit = form.querySelector('[type="submit"]');
     if (submit.disabled) return;
     submit.disabled = true;
     try {
-      const changed = lookupEdition && key !== originalKey;
+      const changed = (lookupEdition || p.conc) && key !== originalKey;
       const version = changed ? await prepareVersion(requested) : null;
       if (!formIsOpen() || versionKey(identity()) !== key || (changed && !version)) return;
       if (!id && (matchingBottle(requested)?.id || "") !== submit.dataset.duplicate) {
@@ -2126,13 +2350,45 @@ async function submitForm(orig,version){
   else { delete p.own; delete p.triedOn; }
   if (version) applyPerfumeVersion(p,version);
   // 換了 Fragrantica 網址就重新對應網站的完整資料
-  if ((orig.source || "") !== p.source) delete p.detailsVer;
+  if ((orig.source || "") !== p.source) {
+    delete p.detailsVer;
+    delete p.bottleCutout;
+  }
   const message = orig.id ? "已儲存" : own === "wish" ? "已加入願望清單" : own === "tried" ? "已加入試香紀錄" : "已新增香水";
   await act(async () => {
     await Store.savePerfume(p, true);
     if (Store.bundle?.details?.[fragranticaId(p.source)]) { Store.applyDetails(Store.bundle); Store.save(); }
   }, message);
   detailSheet(id);
+  if (!orig.id || version || p.source !== orig.source) {
+    void enrichSavedPerfume(id).then(() => enrichBottlePhoto(id));
+  }
+}
+
+async function enrichSavedPerfume(id){
+  const initial = byId(id);
+  if (!initial?.conc || initial.notes || initial.catalogSource) return;
+  const requested = {...initial,brand:remoteCatalogQuery(initial.brand)};
+  try {
+    const profile = await lookupPerfumeVersion(requested);
+    const current = byId(id);
+    if (!profile?.notes || !current || current.source !== initial.source || versionKey(current) !== versionKey(initial)) return;
+    const updated = {...current};
+    for (const key of ["notes","catalogSource","catalogImage","catalogRevision","source","strength","longevity","fragranticaRating","seasons","votes"]) {
+      if ((updated[key] === "" || updated[key] == null) && profile[key] != null) updated[key] = profile[key];
+    }
+    for (const key of ["families","accords","aliases"]) {
+      if (!updated[key]?.length && profile[key]?.length) updated[key] = profile[key];
+    }
+    if (JSON.stringify(updated) === JSON.stringify(current)) return;
+    await Store.savePerfume(updated);
+    if (viewingPerfume(id)) {
+      const scroll = $("#sheet-scroll").scrollTop;
+      detailSheet(id);
+      $("#sheet-scroll").scrollTop = scroll;
+    }
+    toast("已補齊查到的香水資料");
+  } catch { /* The saved entry is available while the catalogue is offline. */ }
 }
 
 function wearDateLabel(date){
@@ -2220,6 +2476,20 @@ function editDaySheet(date, wearId = null){
 }
 
 /* ---------- events ---------- */
+document.addEventListener("submit", e => {
+  if (e.target.id !== "intent-form") return;
+  e.preventDefault();
+  S.intentInput = $("#intent-input").value.trim();
+  S.intentPreview = PerfumeEnrichment.parseIntent(S.intentInput);
+  renderToday();
+  ($("#intent-form [data-act='intent-apply']") || $("#intent-input"))?.focus();
+});
+document.addEventListener("input", e => {
+  if (e.target.id !== "intent-input") return;
+  S.intentInput = e.target.value;
+  S.intentPreview = null;
+  for (const element of e.target.form.querySelectorAll("[data-intent-preview]")) element.remove();
+});
 let delArm = null, importArm = null;
 function confirmDelete(button, message){
   if (delArm?.button === button) {
@@ -2244,8 +2514,31 @@ document.addEventListener("click", async e => {
     case "temp": S.ctx.temp = Math.max(-5, Math.min(42, S.ctx.temp + Number(v))); S.ctx.guessed = false; S.ctx.src = "manual"; S.ctx.manual = true; saveCtx(); resetRecommendationChoices(); render(); break;
     case "wet": S.ctx.wet = !S.ctx.wet; S.ctx.src = "manual"; S.ctx.manual = true; saveCtx(); resetRecommendationChoices(); render(); break;
     case "occ":
-      if (S.ctx.occ !== v) resetRecommendationChoices();
+      if (S.ctx.occ !== v || S.ctx.intent?.occ) resetRecommendationChoices();
+      if (S.ctx.intent?.occ) {
+        delete S.ctx.intent.occ;
+        if (!Object.keys(S.ctx.intent).length) delete S.ctx.intent;
+      }
       S.ctx.occ = v; applyWeather(); saveCtx(); render();
+      break;
+    case "intent-apply": {
+      const choices = new FormData(b.form);
+      const selected = {};
+      for (const [key,value] of intentConditions(S.intentPreview || {})) {
+        if (!choices.getAll(key).includes(value)) continue;
+        if (key === "prefer" || key === "avoid") (selected[key] ||= []).push(value);
+        else selected[key] = value;
+      }
+      if (!Object.keys(selected).length) { toast("請至少選一個條件"); break; }
+      S.ctx.intent = selected;
+      S.intentPreview = null;
+      applyWeather(); saveCtx(); resetRecommendationChoices(); renderToday();
+      break;
+    }
+    case "intent-clear":
+      delete S.ctx.intent;
+      S.intentInput = ""; S.intentPreview = null;
+      applyWeather(); saveCtx(); resetRecommendationChoices(); renderToday();
       break;
     case "autowx": S.ctx.manual = false; S.ctx.src = null; applyWeather(); saveCtx(); resetRecommendationChoices(); render(); break;
     case "shuffle":
@@ -2266,7 +2559,17 @@ document.addEventListener("click", async e => {
     }
     case "sync": if (Sync.valid()) Sync.run(); else Sync.connect(); break;
     case "gd-stop": Sync.stop(); break;
-    case "unphoto": { const p = byId(id); if (p) { const q = Object.assign({}, p); delete q.photo; await Store.savePerfume(q); detailSheet(id); toast("已改回原本圖片"); } break; }
+    case "unphoto": {
+      const p = byId(id);
+      if (p) {
+        bottleUploads.delete(id);
+        const {photo,photoTransparent,...updated} = p;
+        await Store.savePerfume(updated);
+        detailSheet(id); toast("已改回原本圖片");
+        void enrichBottlePhoto(id);
+      }
+      break;
+    }
     case "wxrefresh": {
       if (Weather.busy) break;
       b.disabled = true; b.classList.add("spinning");
@@ -2284,7 +2587,7 @@ document.addEventListener("click", async e => {
       if (Sync.on && !Sync.valid()) Sync.connect(); // 順便取得同步授權（要在點擊當下）
       closeSheet();
       const refill = wearsOn(TODAY).some(w => w.perfumeId === id);
-      await act(() => Store.addWear({date:TODAY, time:nowTime(), perfumeId:id, occ:S.ctx.occ, temp:S.ctx.temp, wet:!!S.ctx.wet}),
+      await act(() => Store.addWear({date:TODAY, time:nowTime(), perfumeId:id, occ:S.ctx.intent?.occ || S.ctx.occ, temp:S.ctx.temp, wet:!!S.ctx.wet}),
         refill ? `已記錄補香：${p.name}` : `已記錄：今天噴 ${p.name}`);
       if (S.view !== "today") location.hash = "today";
       break;
@@ -2390,18 +2693,25 @@ document.addEventListener("input", e => {
   S.q = e.target.value;
   renderShelfResults();
 });
-// 自己拍的照片：縮到 480px 高的 JPEG（約 40KB）再存，才放得進手機儲存空間和雲端備份
+const bottleUploads = new Map();
 document.addEventListener("change", async e => {
   if (e.target.id !== "photo-in" || !e.target.files || !e.target.files[0]) return;
   const id = e.target.dataset.id, p = byId(id); if (!p) return;
+  const job = Symbol(id), file = e.target.files[0];
+  bottleUploads.set(id,job);
+  e.target.value = "";
   try {
-    const bmp = await createImageBitmap(e.target.files[0]);
-    const H = 480, scale = Math.min(1, H / bmp.height), w = Math.round(bmp.width * scale), h = Math.round(bmp.height * scale);
-    const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
-    cv.getContext("2d").drawImage(bmp, 0, 0, w, h);
-    await Store.savePerfume(Object.assign({}, p, {photo: cv.toDataURL("image/jpeg", 0.8)}));
-    detailSheet(id); toast("照片已更新");
-  } catch { toast("這張照片讀不到，換一張試試"); }
+    const objectUrl = URL.createObjectURL(file);
+    let photo;
+    try { photo = preparePhoto(await loadPhoto(objectUrl)); }
+    finally { URL.revokeObjectURL(objectUrl); }
+    const current = byId(id);
+    if (bottleUploads.get(id) !== job || !current || versionKey(p) !== versionKey(current)) return;
+    await Store.savePerfume({...current,photo:photo.url,photoTransparent:photo.transparent});
+    if (viewingPerfume(id)) detailSheet(id);
+    toast(photo.transparent ? "瓶照已去背並儲存" : "已儲存瓶照，白底圖片較適合自動去背");
+  } catch { if (bottleUploads.get(id) === job) toast("這張照片讀不到，換一張試試"); }
+  finally { if (bottleUploads.get(id) === job) bottleUploads.delete(id); }
 });
 $("#backdrop").addEventListener("click", closeSheet);
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeSheet(); });
